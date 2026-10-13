@@ -199,6 +199,12 @@ details p{color:var(--muted);margin:.5em 0 0;max-width:62ch}
   .toast{transition:opacity .2s}
   .gmark{transition:left .3s ease}
 }
+.scanbtn{display:flex;align-items:center;justify-content:center;gap:8px;padding-block:12px}
+.scanbtn svg{width:20px;height:20px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.check{display:flex;align-items:center;gap:8px;font-size:14px}
+.check input{width:20px;height:20px;accent-color:var(--accent)}
+#scanText{white-space:pre-wrap;font-size:12px;color:var(--muted);max-height:160px;overflow:auto;background:var(--surface-2);padding:8px;border-radius:8px;margin:6px 0 0}
+.food .tag{display:inline-block;font-size:11px;font-weight:600;color:var(--accent);margin-left:6px}
 .btn.file{position:relative;overflow:hidden}
 .btn.file input{position:absolute;inset:0;opacity:0;cursor:pointer}
 @media (max-width:380px){ .big .n{font-size:54px} .item{grid-template-columns:minmax(0,1fr) 74px 56px 28px} .exgrid{grid-template-columns:1fr 64px} .exgrid .k{grid-column:1/-1;padding:0} }
@@ -246,16 +252,23 @@ details p{color:var(--muted);margin:.5em 0 0;max-width:62ch}
       <div class="foodlist" id="foodList"></div>
     </div>
     <div id="paneCustom" class="stack" hidden>
-      <p class="hint">Pour un produit qui n'est pas dans la liste, recopie les valeurs de l'étiquette pour la portion que tu as mangée.</p>
-      <label class="f">Nom <input type="text" id="cName" placeholder="Ex. : sandwich thon œuf"></label>
+      <label class="btn primary file scanbtn" id="scanBtn"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8V6a2 2 0 0 1 2-2h2"/><path d="M16 4h2a2 2 0 0 1 2 2v2"/><path d="M20 16v2a2 2 0 0 1-2 2h-2"/><path d="M8 20H6a2 2 0 0 1-2-2v-2"/><path d="M8 9h8"/><path d="M8 12h8"/><path d="M8 15h5"/></svg>Scanner l'étiquette nutritionnelle<input type="file" id="scanFile" accept="image/*"></label>
+      <div class="note info" id="scanStatus" role="status" hidden></div>
+      <p class="hint">Photographie le tableau « Valeurs nutritionnelles » bien à plat, net et sans reflet. Vérifie toujours les valeurs lues avant d'ajouter.</p>
+      <label class="f">Nom <input type="text" id="cName" placeholder="Ex. : cookie Falcone"></label>
+      <div class="seg" id="cBasis" role="group" aria-label="Les valeurs sont pour"><button data-b="100" class="on">Valeurs pour 100 g</button><button data-b="portion">Pour la portion</button></div>
       <div class="grid2">
+        <label class="f" id="cQtyWrap">Quantité mangée (g) <input type="number" id="cQty" inputmode="decimal" min="0" placeholder="ex. 50"></label>
         <label class="f">Calories (kcal) <input type="number" id="cKcal" inputmode="decimal" min="0"></label>
         <label class="f">Protéines (g) <input type="number" id="cP" inputmode="decimal" min="0"></label>
         <label class="f">Glucides (g) <input type="number" id="cG" inputmode="decimal" min="0"></label>
         <label class="f">Lipides (g) <input type="number" id="cL" inputmode="decimal" min="0"></label>
         <label class="f">Fibres (g) <input type="number" id="cF" inputmode="decimal" min="0"></label>
       </div>
-      <button class="btn primary" id="cAdd">Ajouter la portion</button>
+      <div class="calc"><span>Ce que tu manges</span><b id="cPreview">0 kcal</b></div>
+      <label class="check"><input type="checkbox" id="cSave" checked> Garder ce produit dans ma liste d'aliments</label>
+      <details id="scanRaw" hidden><summary>Texte lu sur la photo</summary><pre id="scanText"></pre></details>
+      <button class="btn primary" id="cAdd">Ajouter</button>
     </div>
   </div>
 </div>
@@ -298,11 +311,14 @@ var DATE_RE=/^\d{4}-\d{2}-\d{2}$/;
 var LS_KEY='releve-calorique-v1';
 
 function uid(){return Math.random().toString(36).slice(2,10);}
-function mk(k,q){var f=FOOD[k];return {id:uid(),k:k,n:f.n,u:f.u,v:f.v.slice(),q:q};}
+function getFood(k){if(FOOD[k])return FOOD[k];var c=(S&&S.profile&&S.profile.customFoods||[]).filter(function(f){return f.k===k;})[0];return c||null;}
+function allFoods(){return ((S&&S.profile&&S.profile.customFoods)||[]).concat(FOODS);}
+function mk(k,q){var f=getFood(k);return {id:uid(),k:k,n:f.n,u:f.u,v:f.v.slice(),q:q};}
 function defaultProfile(){
   return {age:23,height:177,weight:85,sex:'h',baseFix:2000,floor:73,defMin:1000,defMax:1500,protMin:130,protMax:150,
     templates:[{id:uid(),n:'Mon repas type',items:[mk('poulet',150),mk('oeuf',2),mk('pates',40),mk('lentilles_s',50),mk('poivron',100),mk('courgette',100),mk('brocolis',100),mk('haricots',150)]}],
-    program:[{n:'Pompes',sr:'3 × 12',min:6,int:'mod'},{n:'Squats',sr:'3 × 15',min:6,int:'mod'},{n:'Gainage',sr:'3 × 45 s',min:5,int:'mod'},{n:'Fentes',sr:'3 × 10 par jambe',min:6,int:'mod'}]};
+    program:[{n:'Pompes',sr:'3 × 12',min:6,int:'mod'},{n:'Squats',sr:'3 × 15',min:6,int:'mod'},{n:'Gainage',sr:'3 × 45 s',min:5,int:'mod'},{n:'Fentes',sr:'3 × 10 par jambe',min:6,int:'mod'}],
+    customFoods:[]};
 }
 function newDay(key){return {date:key,steps:0,stepKcal:null,bike:{min:0,km:0,int:'mod'},ex:[],meals:{midi:[],soir:[],extra:[]},weight:null};}
 function num(x,d){var n=parseFloat(x);return isFinite(n)?n:(d===undefined?0:d);}
@@ -322,6 +338,7 @@ function normProfile(p){
   if(p.sex==='f'||p.sex==='h')o.sex=p.sex;
   if(Object.prototype.hasOwnProperty.call(p,'baseFix'))o.baseFix=(p.baseFix===null||p.baseFix===''||!num(p.baseFix))?null:num(p.baseFix);
   if(Array.isArray(p.templates))o.templates=p.templates.map(function(t){return {id:t.id||uid(),n:String(t.n||'Repas type'),items:(t.items||[]).map(normItem)};});
+  if(Array.isArray(p.customFoods))o.customFoods=p.customFoods.filter(function(f){return f&&f.k;}).map(function(f){return {k:String(f.k),n:String(f.n||'Produit'),u:f.u==='pc'?'pc':'g',v:(f.v||[]).map(function(x){return num(x);}).concat([0,0,0,0,0]).slice(0,5),custom:true};});
   if(Array.isArray(p.program))o.program=p.program.map(function(e){return {n:String(e.n||''),sr:String(e.sr||''),min:num(e.min),int:EX_MET[e.int]?e.int:'mod'};});
   return o;
 }
@@ -617,6 +634,7 @@ function vProfil(){
     f('protmin','Protéines mini (g)','protMin')+f('protmax','Protéines maxi (g)','protMax')+f('floor','Poids plancher (kg)','floor',0.5)+'</div>'+
     '<div class="small muted">Garde un déficit maximum de 1 500 kcal : au-delà, la perte de muscle et l\'effet yoyo reviennent.</div></section>';
   h+='<section class="card"><h2>Mes repas types</h2>'+(p.templates.length?'<div class="rows">'+p.templates.map(function(t,i){var s=sumItems(t.items);return '<div class="row"><span>'+esc(t.n)+' <span class="muted small">· '+fmt(s[0])+' kcal, '+fmt(s[1])+' g de protéines</span></span><button class="x" data-act="del-tpl" data-i="'+i+'" aria-label="Supprimer '+esc(t.n)+'">×</button></div>';}).join('')+'</div>':'<div class="empty">Aucun. Dans l\'onglet Repas, « Enregistrer comme repas type » sous un repas rempli.</div>')+'</section>';
+  h+='<section class="card"><h2>Mes aliments enregistrés</h2>'+(p.customFoods.length?'<div class="rows">'+p.customFoods.map(function(f,i){return '<div class="row"><span>'+esc(f.n)+' <span class="muted small">· '+fmt(f.v[0])+' kcal '+(f.u==='g'?'/ 100 g':'/ portion')+'</span></span><button class="x" data-act="del-food" data-i="'+i+'" aria-label="Supprimer '+esc(f.n)+'">×</button></div>';}).join('')+'</div>':'<div class="empty">Aucun. Scanne une étiquette dans Repas, puis + Aliment et Personnalisé.</div>')+'</section>';
   h+='<section class="card"><h2>Mon programme maison</h2>'+(p.program.length?'<div class="rows">'+p.program.map(function(e){return '<div class="row"><span>'+esc(e.n)+' <span class="muted small">· '+esc(e.sr)+'</span></span><span class="v">'+fmt(e.min)+' min</span></div>';}).join('')+'</div>':'<div class="empty">Aucun programme enregistré.</div>')+
     '<div class="small muted">Pour le modifier : ajuste tes exercices dans l\'onglet Sport puis « Enregistrer comme programme ».</div></section>';
   h+='<section class="card"><h2>Comment c\'est calculé</h2>'+
@@ -706,6 +724,9 @@ view.addEventListener('click',function(e){
   if(a==='del-tpl'){var t=S.profile.templates[+b.dataset.i];if(!t)return;
     if(b.dataset.confirm!=='1'){b.dataset.confirm='1';b.textContent='Supprimer ?';b.style.width='auto';b.style.fontSize='13px';b.style.color='var(--bad)';return;}
     S.profile.templates.splice(+b.dataset.i,1);touch('profile');render();toast('Repas type supprimé');return;}
+  if(a==='del-food'){var cf=S.profile.customFoods[+b.dataset.i];if(!cf)return;
+    if(b.dataset.confirm!=='1'){b.dataset.confirm='1';b.textContent='Supprimer ?';b.style.width='auto';b.style.fontSize='13px';b.style.color='var(--bad)';return;}
+    S.profile.customFoods.splice(+b.dataset.i,1);touch('profile');render();toast('Aliment supprimé');return;}
   d=day();
   if(a==='del-item'){d.meals[b.dataset.slot].splice(+b.dataset.i,1);}
   else if(a==='add-tpl'){var tp=S.profile.templates[+b.dataset.t];tp.items.forEach(function(it){var c=normItem(it);c.id=uid();d.meals[b.dataset.slot].push(c);});toast(tp.n+' ajouté');}
@@ -727,7 +748,8 @@ function openSheet(slot){
   sheetSlot=slot;picked=null;
   document.getElementById('sheetTitle').textContent='Ajouter · '+SLOTS.filter(function(s){return s[0]===slot;})[0][1];
   document.getElementById('foodSearch').value='';document.getElementById('pick').hidden=true;
-  ['cName','cKcal','cP','cG','cL','cF'].forEach(function(id){document.getElementById(id).value='';});
+  ['cName','cQty','cKcal','cP','cG','cL','cF'].forEach(function(id){document.getElementById(id).value='';});
+  setBasis('100');document.getElementById('scanStatus').hidden=true;document.getElementById('scanRaw').hidden=true;cPreview();
   setSheetTab('list');drawFoods();sheet.hidden=false;scrim.hidden=false;
   setTimeout(function(){document.getElementById('foodSearch').focus();},50);
 }
@@ -736,13 +758,13 @@ function setSheetTab(t){document.querySelectorAll('#sheetTabs button').forEach(f
 function norm(s){return s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');}
 function drawFoods(){
   var q=norm(document.getElementById('foodSearch').value.trim());
-  var list=FOODS.filter(function(f){return !q||norm(f.n).indexOf(q)>=0;});
-  document.getElementById('foodList').innerHTML=list.length?list.map(function(f){return '<button class="food'+(picked&&picked.k===f.k?' on':'')+'" data-k="'+f.k+'"><span>'+esc(f.n)+'</span><span>'+fmt(f.v[0])+' kcal'+(f.u==='g'?' / 100 g':' / pièce')+'</span></button>';}).join(''):'<div class="empty">Aucun aliment trouvé. Utilise l\'onglet Personnalisé.</div>';
+  var list=allFoods().filter(function(f){return !q||norm(f.n).indexOf(q)>=0;});
+  document.getElementById('foodList').innerHTML=list.length?list.map(function(f){return '<button class="food'+(picked&&picked.k===f.k?' on':'')+'" data-k="'+esc(f.k)+'"><span>'+esc(f.n)+(f.custom?'<span class="tag">perso</span>':'')+'</span><span>'+fmt(f.v[0])+' kcal'+(f.u==='g'?' / 100 g':' / pièce')+'</span></button>';}).join(''):'<div class="empty">Aucun aliment trouvé. Utilise l\'onglet Personnalisé.</div>';
 }
 function pickPreview(){if(!picked)return;var q=num(document.getElementById('pickQty').value);var it={u:picked.u,v:picked.v,q:q};var v=itemVals(it);document.getElementById('pickKcal').textContent=fmt(v[0])+' kcal · '+fmt(v[1])+' g prot.';}
 document.getElementById('foodSearch').addEventListener('input',drawFoods);
 document.getElementById('foodList').addEventListener('click',function(e){
-  var b=e.target.closest('[data-k]');if(!b)return;picked=FOOD[b.dataset.k];
+  var b=e.target.closest('[data-k]');if(!b)return;picked=getFood(b.dataset.k);if(!picked)return;
   document.getElementById('pick').hidden=false;document.getElementById('pickName').textContent=picked.n;
   document.getElementById('pickUnit').textContent=picked.u==='g'?'en grammes':'en pièces';
   var last=null;Object.keys(S.days).sort().forEach(function(k){SLOTS.forEach(function(s){S.days[k].meals[s[0]].forEach(function(it){if(it.k===picked.k)last=it.q;});});});
@@ -755,11 +777,100 @@ document.getElementById('pickAdd').addEventListener('click',function(){
   if(!picked)return;var q=num(document.getElementById('pickQty').value);if(q<=0){toast('Indique une quantité supérieure à 0.');return;}
   day().meals[sheetSlot].push(mk(picked.k,q));touch(S.key);closeSheet();render();toast(picked.n+' ajouté');
 });
+/* custom product + label scan */
+var basis='100';
+function setBasis(b){basis=b;document.querySelectorAll('#cBasis button').forEach(function(x){x.classList.toggle('on',x.dataset.b===b);});document.getElementById('cQtyWrap').hidden=b!=='100';cPreview();}
+function cVals(){return ['cKcal','cP','cG','cL','cF'].map(function(id){return num(document.getElementById(id).value);});}
+function cPreview(){
+  var v=cVals(), f=basis==='100'?num(document.getElementById('cQty').value)/100:1;
+  document.getElementById('cPreview').textContent=(basis==='100'&&!num(document.getElementById('cQty').value))?'Indique la quantité':fmt(v[0]*f)+' kcal · '+fmt(v[1]*f)+' g prot.';
+}
+document.getElementById('cBasis').addEventListener('click',function(e){var b=e.target.closest('[data-b]');if(b)setBasis(b.dataset.b);});
+['cQty','cKcal','cP','cG','cL','cF'].forEach(function(id){document.getElementById(id).addEventListener('input',cPreview);});
 document.getElementById('cAdd').addEventListener('click',function(){
-  var n=document.getElementById('cName').value.trim(),k=num(document.getElementById('cKcal').value,NaN);
-  if(!n||!isFinite(k)){toast('Indique au moins un nom et les calories.');return;}
-  day().meals[sheetSlot].push({id:uid(),k:null,n:n,u:'portion',q:1,v:[k,num(document.getElementById('cP').value),num(document.getElementById('cG').value),num(document.getElementById('cL').value),num(document.getElementById('cF').value)]});
+  var n=document.getElementById('cName').value.trim(),v=cVals(),kc=num(document.getElementById('cKcal').value,NaN),qty=num(document.getElementById('cQty').value);
+  if(!n||!isFinite(kc)){toast('Indique au moins un nom et les calories.');return;}
+  if(basis==='100'&&qty<=0){toast('Indique la quantité mangée en grammes.');document.getElementById('cQty').focus();return;}
+  var u=basis==='100'?'g':'pc', k=null;
+  if(document.getElementById('cSave').checked){
+    k='c_'+uid();S.profile.customFoods.unshift({k:k,n:n,u:u,v:v.slice(),custom:true});touch('profile');
+  }
+  day().meals[sheetSlot].push({id:uid(),k:k,n:n,u:u,q:basis==='100'?qty:1,v:v});
   touch(S.key);closeSheet();render();toast(n+' ajouté');
+});
+
+var tessP=null;
+function loadTess(){
+  if(window.Tesseract)return Promise.resolve(window.Tesseract);
+  if(tessP)return tessP;
+  tessP=new Promise(function(res,rej){var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js';s.onload=function(){res(window.Tesseract);};s.onerror=function(){tessP=null;rej(new Error('load'));};document.head.appendChild(s);});
+  return tessP;
+}
+function prepImage(file){
+  return new Promise(function(res,rej){
+    var img=new Image(),url=URL.createObjectURL(file);
+    img.onload=function(){
+      var big=Math.max(img.width,img.height), sc=big>2200?2200/big:(big<1200?1200/big:1);
+      var c=document.createElement('canvas');c.width=Math.round(img.width*sc);c.height=Math.round(img.height*sc);
+      var x=c.getContext('2d');x.drawImage(img,0,0,c.width,c.height);
+      var d=x.getImageData(0,0,c.width,c.height),p=d.data;
+      for(var i=0;i<p.length;i+=4){var g=0.299*p[i]+0.587*p[i+1]+0.114*p[i+2];g=(g-140)*1.5+140;g=g<0?0:g>255?255:g;p[i]=p[i+1]=p[i+2]=g;}
+      x.putImageData(d,0,0);URL.revokeObjectURL(url);res(c);
+    };
+    img.onerror=function(){URL.revokeObjectURL(url);rej(new Error('img'));};
+    img.src=url;
+  });
+}
+function parseLabel(txt){
+  var t=txt.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[|«»]/g,' ').replace(/(\d)\s*[oO]\b/g,'$10');
+  var lines=t.split(/\n+/);
+  function toN(s){return parseFloat(s.replace(',','.'));}
+  function first(s){var m=/(\d+(?:[.,]\d+)?)/.exec(s);return m?toN(m[1]):null;}
+  function find(re,excl){
+    for(var i=0;i<lines.length;i++){var L=lines[i];var m=re.exec(L);
+      if(m&&!(excl&&excl.test(L))){var n=first(L.slice(m.index+m[0].length));if(n===null&&lines[i+1])n=first(lines[i+1]);if(n!==null)return n;}}
+    return null;
+  }
+  var r={};
+  var kc=/(\d+(?:[.,]\d+)?)\s*k\s*ca[l1i]/.exec(t);
+  if(kc)r.kcal=toN(kc[1]);else{var kj=/(\d+(?:[.,]\d+)?)\s*k\s*j/.exec(t);if(kj)r.kcal=Math.round(toN(kj[1])/4.184);}
+  // FR, EN, IT, ES, DE, NL, PT
+  var SUB=/^\s*[-–•]?\s*(dont|of which|di cui|de las cuales|de los cuales|de las que|davon|waarvan|das quais|dos quais)/;
+  r.l=find(/matieres?\s*grasses|lipides|graisses|\bfats?\b|grassi|grasas|lipidos|gorduras|\bfett\b|vetten/,new RegExp(SUB.source+'|satur|gesatt|verzadig'));
+  r.g=find(/glucides|carbohydrates?|carboidrati|hidratos\s*de\s*carbono|kohlenhydrate|koolhydraten|glucidi/,SUB);
+  r.p=find(/proteines?|proteins?|proteine|proteinas|eiwei|eiwitten/);
+  r.f=find(/fibres?|fibers?|fibra|fibre\s*alimentari|ballaststoffe|vezels/);
+  var w=/(?:poids\s*net|net\s*weight|net\s*wt|peso\s*nett?o|peso\s*neto|nettogewicht|nettofullmenge|inhoud|poids)[^\d]{0,12}(\d{1,4})\s*g\b/.exec(t);if(w)r.w=toN(w[1]);
+  return r;
+}
+function scanStatus(msg,cls){var s=document.getElementById('scanStatus');s.className='note '+(cls||'info');s.textContent=msg;s.hidden=false;}
+document.getElementById('scanFile').addEventListener('change',function(e){
+  var file=e.target.files&&e.target.files[0];e.target.value='';if(!file)return;
+  var btn=document.getElementById('scanBtn');btn.style.opacity='.6';btn.style.pointerEvents='none';
+  scanStatus('Préparation de la lecture… La première fois, l\'outil se télécharge (quelques Mo), ensuite c\'est plus rapide.');
+  var done=function(){btn.style.opacity='';btn.style.pointerEvents='';};
+  Promise.all([loadTess(),prepImage(file)]).then(function(r){
+    var T=r[0],canvas=r[1];
+    return T.recognize(canvas,'fra+eng+ita+spa+deu',{logger:function(m){
+      if(m.status==='recognizing text')scanStatus('Lecture de l\'étiquette… '+Math.round(m.progress*100)+' %');
+      else if(/load|initializ/.test(m.status||''))scanStatus('Chargement des langues (français, anglais, italien, espagnol, allemand)…');
+    }});
+  }).then(function(res){
+    var text=(res&&res.data&&res.data.text)||'';
+    document.getElementById('scanText').textContent=text.trim()||'(aucun texte lu)';document.getElementById('scanRaw').hidden=false;
+    var p=parseLabel(text), found=[];
+    setBasis('100');
+    function put(id,v,lbl){if(v!==null&&v!==undefined&&isFinite(v)){document.getElementById(id).value=Math.round(v*10)/10;found.push(lbl);}}
+    put('cKcal',p.kcal,'calories');put('cL',p.l,'lipides');put('cG',p.g,'glucides');put('cP',p.p,'protéines');put('cF',p.f,'fibres');
+    if(p.w&&!document.getElementById('cQty').value)document.getElementById('cQty').value=p.w;
+    cPreview();
+    if(!found.length){scanStatus('Je n\'ai pas réussi à lire les valeurs. Reprends la photo plus près, bien à plat et sans reflet, ou saisis-les à la main.','bad');}
+    else if(found.length<4){scanStatus('Lu : '+found.join(', ')+'. Il manque des valeurs : complète-les et vérifie le reste avec l\'étiquette. Les valeurs sont pour 100 g.','');}
+    else{scanStatus('Lu : '+found.join(', ')+' (pour 100 g). Vérifie avec l\'étiquette, donne un nom et la quantité mangée.','info');}
+    if(!document.getElementById('cName').value)document.getElementById('cName').focus();else document.getElementById('cQty').focus();
+  }).catch(function(){
+    scanStatus('Lecture impossible : vérifie ta connexion pour le premier usage, ou saisis les valeurs à la main.','bad');
+  }).then(done);
 });
 document.getElementById('sheetTabs').addEventListener('click',function(e){var b=e.target.closest('[data-st]');if(b)setSheetTab(b.dataset.st);});
 document.getElementById('sheetClose').addEventListener('click',closeSheet);

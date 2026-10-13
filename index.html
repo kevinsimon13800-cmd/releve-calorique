@@ -309,6 +309,7 @@ var EX_MET={leger:3.5,mod:5,fort:8};
 var PRESETS=[['Pompes','3 × 12'],['Squats','3 × 15'],['Fentes','3 × 10 par jambe'],['Gainage','3 × 45 s'],['Dips sur chaise','3 × 10'],['Rowing sac à dos','3 × 12'],['Abdos crunch','3 × 15']];
 var DATE_RE=/^\d{4}-\d{2}-\d{2}$/;
 var LS_KEY='releve-calorique-v1';
+var APP_VERSION='1.2 (scan des étiquettes)';
 
 function uid(){return Math.random().toString(36).slice(2,10);}
 function getFood(k){if(FOOD[k])return FOOD[k];var c=(S&&S.profile&&S.profile.customFoods||[]).filter(function(f){return f.k===k;})[0];return c||null;}
@@ -644,7 +645,8 @@ function vProfil(){
   h+='<section class="card"><h2>Sauvegarde</h2>'+
     '<p class="hint">Tes données restent sur cet iPhone, dans l\'application. Si tu la supprimes de l\'écran d\'accueil, elles sont effacées. Exporte une sauvegarde de temps en temps, par exemple dans Fichiers ou iCloud Drive.</p>'+
     '<div class="btns"><button class="btn primary" data-act="export">Exporter mes données</button>'+
-    '<label class="btn file">Importer une sauvegarde<input type="file" id="importFile" accept="application/json,.json"></label></div></section>';
+    '<label class="btn file">Importer une sauvegarde<input type="file" id="importFile" accept="application/json,.json"></label></div>'+
+    '<div class="small muted">Version de l\'application : '+APP_VERSION+'</div></section>';
   return h;
 }
 
@@ -888,7 +890,8 @@ loadLocal();
 setMode('local');
 render();
 try{if(navigator.storage&&navigator.storage.persist)navigator.storage.persist();}catch(e){}
-if('serviceWorker' in navigator&&location.protocol==='https:'){navigator.serviceWorker.register('sw.js').catch(function(){});}
+if('serviceWorker' in navigator&&location.protocol==='https:'){navigator.serviceWorker.register('sw.js',{updateViaCache:'none'}).then(function(r){try{r.update();}catch(e){}}).catch(function(){});
+  var reloaded=false;navigator.serviceWorker.addEventListener('controllerchange',function(){if(reloaded)return;reloaded=true;var a=document.activeElement;if(!(a&&/INPUT|TEXTAREA|SELECT/.test(a.tagName))&&sheet.hidden)location.reload();});}
 })();
 </script>
 </body>

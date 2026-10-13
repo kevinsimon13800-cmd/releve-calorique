@@ -336,7 +336,8 @@ var FOODS=[
 ];
 var FOOD={}; FOODS.forEach(function(f){FOOD[f.k]=f;});
 var SLOTS=[['midi','Midi'],['soir','Soir'],['extra','Extras et collations']];
-var BIKE_MET={facile:4.8,mod:6.8,fort:8.8};
+var BIKE_MET={facile:4.8,mod:6.8,fort:8.8}; // ancien calcul à la durée, utilisé seulement pour convertir l'historique
+var BIKE_KCAL_KG_KM=0.33; // vélo : kcal par kg de poids du corps et par km (hors dépense de repos)
 /* Renforcement : calcul aux répétitions.
    Par répétition : (part du poids du corps déplacée × poids + charge) × amplitude (m) × g,
    rendement musculaire 20 %, +30 % pour la descente et le gainage. Maintien (gainage) : à la seconde. */
@@ -376,7 +377,7 @@ function normEx(e){
 }
 var DATE_RE=/^\d{4}-\d{2}-\d{2}$/;
 var LS_KEY='releve-calorique-v1';
-var APP_VERSION='1.4 (colonnes 100 g et portion)';
+var APP_VERSION='1.5 (vélo à la distance)';
 
 function uid(){return Math.random().toString(36).slice(2,10);}
 function getFood(k){if(FOOD[k])return FOOD[k];var c=(S&&S.profile&&S.profile.customFoods||[]).filter(function(f){return f.k===k;})[0];return c||null;}
@@ -388,13 +389,18 @@ function defaultProfile(){
     program:[{t:'pompes',s:3,r:12,load:0},{t:'squats',s:3,r:15,load:0},{t:'gainage',s:3,r:45,load:0},{t:'fentes',s:3,r:20,load:0}],
     customFoods:[]};
 }
-function newDay(key){return {date:key,steps:0,stepKcal:null,bike:{min:0,km:0,int:'mod'},ex:[],meals:{midi:[],soir:[],extra:[]},weight:null};}
+function newDay(key){return {date:key,steps:0,stepKcal:null,bike:{km:0,kcal:null},ex:[],meals:{midi:[],soir:[],extra:[]},weight:null};}
 function num(x,d){var n=parseFloat(x);return isFinite(n)?n:(d===undefined?0:d);}
 function normItem(it){return {id:it.id||uid(),k:it.k||null,n:String(it.n||'Aliment'),u:it.u||'g',v:Array.isArray(it.v)?it.v.map(function(x){return num(x);}):[0,0,0,0,0],q:num(it.q,1)};}
 function normDay(d,key){
   var o=newDay(key); d=d||{};
   o.steps=num(d.steps); o.stepKcal=(d.stepKcal===null||d.stepKcal===undefined||d.stepKcal==='')?null:num(d.stepKcal);
-  if(d.bike){o.bike={min:num(d.bike.min),km:num(d.bike.km),int:BIKE_MET[d.bike.int]?d.bike.int:'mod'};}
+  if(d.bike){
+    var bk=(d.bike.kcal===null||d.bike.kcal===undefined||d.bike.kcal==='')?null:Math.max(0,num(d.bike.kcal));
+    // ancienne saisie à la durée sans distance : on garde les kcal déjà comptées
+    if(bk===null&&!num(d.bike.km)&&num(d.bike.min)>0)bk=Math.round(((BIKE_MET[d.bike.int]||BIKE_MET.mod)-1)*85*num(d.bike.min)/60);
+    o.bike={km:Math.max(0,num(d.bike.km)),kcal:bk};
+  }
   o.ex=Array.isArray(d.ex)?d.ex.map(function(e){var x=normEx(e);x.id=e.id||uid();return x;}):[];
   SLOTS.forEach(function(s){o.meals[s[0]]=(d.meals&&Array.isArray(d.meals[s[0]]))?d.meals[s[0]].map(normItem):[];});
   o.weight=(d.weight===null||d.weight===undefined||d.weight==='')?null:num(d.weight);
@@ -410,7 +416,7 @@ function normProfile(p){
   if(Array.isArray(p.program))o.program=p.program.map(normEx);
   return o;
 }
-function dayHasData(d){if(!d)return false;if(d.steps||d.stepKcal||d.weight||(d.bike&&d.bike.min)||(d.ex&&d.ex.length))return true;return SLOTS.some(function(s){return d.meals&&d.meals[s[0]]&&d.meals[s[0]].length;});}
+function dayHasData(d){if(!d)return false;if(d.steps||d.stepKcal||d.weight||(d.bike&&(d.bike.km||d.bike.kcal))||(d.ex&&d.ex.length))return true;return SLOTS.some(function(s){return d.meals&&d.meals[s[0]]&&d.meals[s[0]].length;});}
 
 /* ---------- dates ---------- */
 function pad(n){return (n<10?'0':'')+n;}
@@ -504,13 +510,14 @@ function compute(key){
   var base=p.baseFix?p.baseFix:bmrFor(w)*1.2;
   var walkEst=stepKm(d.steps)*w*0.5;
   var walk=(d.stepKcal!==null&&d.stepKcal!==undefined)?d.stepKcal:walkEst;
-  var bike=Math.max(0,(BIKE_MET[d.bike.int]-1)*w*d.bike.min/60);
+  var bikeEst=d.bike.km*w*BIKE_KCAL_KG_KM;
+  var bike=(d.bike.kcal!==null&&d.bike.kcal!==undefined)?d.bike.kcal:bikeEst;
   var ex=d.ex.reduce(function(a,e){return a+exKcal(e,w);},0);
   var out=base+walk+bike+ex;
   var slots={},all=[];
   SLOTS.forEach(function(s){slots[s[0]]=sumItems(d.meals[s[0]]);all=all.concat(d.meals[s[0]]);});
   var tot=sumItems(all);
-  return {d:d,w:w,base:base,walk:walk,walkEst:walkEst,bike:bike,ex:ex,out:out,inK:tot[0],mac:tot,slots:slots,bal:tot[0]-out,deficit:out-tot[0],has:all.length>0,mealsFull:d.meals.midi.length>0&&d.meals.soir.length>0};
+  return {d:d,w:w,base:base,walk:walk,walkEst:walkEst,bike:bike,bikeEst:bikeEst,ex:ex,out:out,inK:tot[0],mac:tot,slots:slots,bal:tot[0]-out,deficit:out-tot[0],has:all.length>0,mealsFull:d.meals.midi.length>0&&d.meals.soir.length>0};
 }
 function status(c,key){
   var p=S.profile, today=key===todayKey();
@@ -622,10 +629,9 @@ function vSport(){
     '<label class="f">Ou colle ici le texte du raccourci <input type="text" id="f-paste" data-f="paste" placeholder="Appui long puis Coller" autocomplete="off"></label>'+
     '<div class="calc"><span data-live="walkSrc"></span><b data-live="walkKcal"></b></div></section>';
   h+='<section class="card"><div class="cardhead"><h2>Vélo d\'appartement</h2></div>'+
-    '<div class="grid2"><label class="f">Durée (min) <input type="number" id="f-bikemin" data-f="bike.min" inputmode="numeric" min="0" value="'+(d.bike.min||'')+'" placeholder="0"></label>'+
-    '<label class="f">Distance (km) <input type="number" id="f-bikekm" data-f="bike.km" inputmode="decimal" min="0" step="0.1" value="'+(d.bike.km||'')+'" placeholder="0"></label></div>'+
-    '<div class="seg" role="group" aria-label="Intensité">'+[['facile','Facile'],['mod','Modérée'],['fort','Soutenue']].map(function(o){return '<button data-act="bike-int" data-v="'+o[0]+'" class="'+(d.bike.int===o[0]?'on':'')+'">'+o[1]+'</button>';}).join('')+'</div>'+
-    '<div class="small muted">Facile : tu peux chanter. Modérée : tu parles par phrases courtes. Soutenue : quelques mots seulement.</div>'+
+    '<div class="grid2"><label class="f">Distance (km) <input type="number" id="f-bikekm" data-f="bike.km" inputmode="decimal" min="0" step="0.1" value="'+(d.bike.km||'')+'" placeholder="0"></label>'+
+    '<label class="f">kcal du vélo <input type="number" id="f-bikekcal" data-f="bike.kcal" inputmode="numeric" min="0" step="1" value="'+(d.bike.kcal===null?'':d.bike.kcal)+'" placeholder="facultatif"></label></div>'+
+    '<div class="small muted">Calcul sur la distance et ton poids du corps. Si tu saisis les kcal affichées par le vélo, elles remplacent l\'estimation.</div>'+
     '<div class="calc"><span data-live="bikeSpd"></span><b data-live="bikeKcal"></b></div></section>';
   h+='<section class="card"><div class="cardhead"><h2>Renforcement maison</h2><span class="v num" data-live="exTot"></span></div>';
   h+=d.ex.length?'<div>'+d.ex.map(function(e,i){
@@ -707,7 +713,7 @@ function vProfil(){
   h+='<section class="card"><h2>Mon programme maison</h2>'+(p.program.length?'<div class="rows">'+p.program.map(function(e){var x=exoOf(e);return '<div class="row"><span>'+esc(x.n)+' <span class="muted small">· '+fmt(e.s)+' × '+fmt(e.r)+(x.iso?' s':'')+(e.load?' + '+fmt1(e.load)+' kg':'')+'</span></span><span class="v">'+fmt1(exKcal(e,w))+' kcal</span></div>';}).join('')+'</div>':'<div class="empty">Aucun programme enregistré.</div>')+
     '<div class="small muted">Pour le modifier : ajuste tes exercices dans l\'onglet Sport puis « Enregistrer comme programme ».</div></section>';
   h+='<section class="card"><h2>Comment c\'est calculé</h2>'+
-    '<details><summary>Dépense</summary><p>En existant : la valeur que tu as fixée, sinon la formule de Mifflin-St Jeor multipliée par 1,2 pour la vie quotidienne et la digestion. Marche : longueur de pas estimée à 41,5 % de ta taille, puis 0,5 kcal par kilo et par km. Si tu saisis les kcal de Santé, elles remplacent cette estimation. Vélo : équivalents métaboliques (MET) selon la durée et l\'intensité. Renforcement : calcul aux répétitions. Pour chaque répétition, le travail vaut la part de ton poids du corps déplacée (plus la charge éventuelle) × l\'amplitude du mouvement × la gravité, converti en calories avec un rendement musculaire de 20 % et majoré de 30 % pour la descente et le gainage. Le gainage, sans répétitions, se compte à la seconde de maintien. Dans tous les cas, sans compter ce que tu aurais brûlé au repos.</p></details>'+
+    '<details><summary>Dépense</summary><p>En existant : la valeur que tu as fixée, sinon la formule de Mifflin-St Jeor multipliée par 1,2 pour la vie quotidienne et la digestion. Marche : longueur de pas estimée à 41,5 % de ta taille, puis 0,5 kcal par kilo et par km. Si tu saisis les kcal de Santé, elles remplacent cette estimation. Vélo : 0,33 kcal par kilo de poids du corps et par km, soit environ 28 kcal/km à 85 kg. Les kcal affichées par ton vélo, si tu les saisis, remplacent ce calcul. Renforcement : calcul aux répétitions. Pour chaque répétition, le travail vaut la part de ton poids du corps déplacée (plus la charge éventuelle) × l\'amplitude du mouvement × la gravité, converti en calories avec un rendement musculaire de 20 % et majoré de 30 % pour la descente et le gainage. Le gainage, sans répétitions, se compte à la seconde de maintien. Dans tous les cas, sans compter ce que tu aurais brûlé au repos.</p></details>'+
     '<details><summary>Apport</summary><p>Valeurs moyennes pour 100 g, ou par pièce pour les produits unitaires. Pâtes, riz, lentilles et poulet se pèsent crus. Pour un produit avec étiquette, l\'onglet Personnalisé est plus précis.</p></details>'+
     '<details><summary>Limites</summary><p>Ce sont des estimations, à ±10 % selon les personnes. Le vrai juge reste ta balance sur plusieurs semaines : si tu perds environ 1 kg par semaine, les réglages sont bons.</p></details></section>';
   h+='<section class="card"><h2>Sauvegarde</h2>'+
@@ -725,7 +731,7 @@ function live(){
   m.dayIn=fmt(c.inK)+' kcal · '+fmt(c.mac[1])+' g prot.';
   m.walkSrc=d.stepKcal!==null?'Valeur de Santé (estimation : '+fmt(c.walkEst)+')':fmt1(stepKm(d.steps))+' km estimés';
   m.walkKcal=fmt(c.walk)+' kcal';
-  m.bikeSpd=d.bike.min&&d.bike.km?fmt1(d.bike.km/(d.bike.min/60))+' km/h de moyenne':'Selon la durée et l\'intensité';
+  m.bikeSpd=(d.bike.kcal!==null&&d.bike.kcal!==undefined)?'Valeur saisie (estimation : '+fmt(c.bikeEst)+')':fmt1(d.bike.km)+' km × '+fmt1(c.w*BIKE_KCAL_KG_KM)+' kcal/km';
   m.bikeKcal=fmt(c.bike)+' kcal';
   d.ex.forEach(function(e,i){var x=exoOf(e),u=exUnit(e,c.w);m['ex-'+i]=fmt1(exKcal(e,c.w))+' kcal';m['exd-'+i]=x.iso?fmt(exCount(e))+' s de maintien × '+fmt1(u*60)+' kcal/min':fmt(exCount(e))+' répétitions × '+(Math.round(u*100)/100).toLocaleString('fr-FR')+' kcal';});
   m.exTot=fmt(c.ex)+' kcal';
@@ -765,7 +771,7 @@ view.addEventListener('input',function(e){
     if(r.steps!==undefined)d.steps=r.steps;if(r.kcal!==undefined)d.stepKcal=r.kcal;
     touch(S.key);render();toast('Santé importé : '+fmt(d.steps)+' pas'+(r.kcal!==undefined?', '+fmt(r.kcal)+' kcal':''));return;
   }
-  else if(f==='bike.min')d.bike.min=Math.max(0,num(t.value));
+  else if(f==='bike.kcal')d.bike.kcal=t.value===''?null:Math.max(0,num(t.value));
   else if(f==='bike.km')d.bike.km=Math.max(0,num(t.value));
   else if(f==='item-q'){var it=d.meals[t.dataset.slot][+t.dataset.i];if(it)it.q=Math.max(0,num(t.value));}
   else if(f.indexOf('ex.')===0){var ex=d.ex[+t.dataset.i];if(!ex)return;var key=f.slice(3);
@@ -804,7 +810,6 @@ view.addEventListener('click',function(e){
   else if(a==='save-tpl'){var list=d.meals[b.dataset.slot];if(!list.length)return;var nm=(SLOTS.filter(function(s){return s[0]===b.dataset.slot;})[0][1])+' du '+label(S.key,{day:'numeric',month:'short'});
     S.profile.templates.push({id:uid(),n:nm,items:list.map(function(it){var c=normItem(it);c.id=uid();return c;})});touch('profile');toast('Enregistré : « '+nm+' »');}
   else if(a==='copy-meals'){var src=S.days[b.dataset.from];SLOTS.forEach(function(s){d.meals[s[0]]=src.meals[s[0]].map(function(it){var c=normItem(it);c.id=uid();return c;});});toast('Repas repris');}
-  else if(a==='bike-int'){d.bike.int=b.dataset.v;}
   else if(a==='add-ex'){var tk=EXO[b.dataset.t]?b.dataset.t:'autre';d.ex.push({id:uid(),t:tk,s:3,r:EXO[tk].iso?30:10,load:0});}
   else if(a==='del-ex'){d.ex.splice(+b.dataset.i,1);}
   else if(a==='load-prog'){S.profile.program.forEach(function(e){var x=normEx(e);x.id=uid();d.ex.push(x);});toast('Programme chargé');}

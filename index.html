@@ -254,8 +254,24 @@ textarea{resize:vertical}
 <div class="scrim" id="scrim" hidden></div>
 <div class="sheet" id="sheet" hidden role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
   <div class="sheethead"><h2 id="sheetTitle">Ajouter un aliment</h2><button class="x" id="sheetClose" aria-label="Fermer">×</button></div>
-  <div class="seg" id="sheetTabs"><button data-st="list" class="on">Liste</button><button data-st="custom">Personnalisé</button></div>
+  <div class="seg" id="sheetTabs"><button data-st="quick">Rapide</button><button data-st="list" class="on">Liste</button><button data-st="custom">Personnalisé</button></div>
   <div class="sheetbody">
+    <div id="paneQuick" class="stack" hidden>
+      <p class="hint">Tu as déjà pesé et calculé ton repas ? Saisis juste son nom, ses calories et ses protéines.</p>
+      <label class="f">Nom du repas <input type="text" id="qName" placeholder="Ex. : quiche jambon maison (1/6)" autocomplete="off"></label>
+      <div class="grid2">
+        <label class="f">Calories (kcal) <input type="number" id="qKcal" inputmode="decimal" min="0"></label>
+        <label class="f">Protéines (g) <input type="number" id="qP" inputmode="decimal" min="0"></label>
+      </div>
+      <details class="method" id="qMore"><summary><b>Glucides et lipides</b><span class="muted small">facultatif</span></summary>
+        <div class="grid2">
+          <label class="f">Glucides (g) <input type="number" id="qG" inputmode="decimal" min="0"></label>
+          <label class="f">Lipides (g) <input type="number" id="qL" inputmode="decimal" min="0"></label>
+        </div>
+      </details>
+      <label class="check"><input type="checkbox" id="qSave"> Garder ce repas dans ma liste pour le réutiliser</label>
+      <button class="btn primary" id="qAdd">Ajouter</button>
+    </div>
     <div id="paneList" class="stack">
       <input type="search" id="foodSearch" placeholder="Rechercher : poulet, pâtes, cookie…" autocomplete="off">
       <div class="pick" id="pick" hidden>
@@ -377,7 +393,7 @@ function normEx(e){
 }
 var DATE_RE=/^\d{4}-\d{2}-\d{2}$/;
 var LS_KEY='releve-calorique-v1';
-var APP_VERSION='1.5 (vélo à la distance)';
+var APP_VERSION='1.6 (repas rapide)';
 
 function uid(){return Math.random().toString(36).slice(2,10);}
 function getFood(k){if(FOOD[k])return FOOD[k];var c=(S&&S.profile&&S.profile.customFoods||[]).filter(function(f){return f.k===k;})[0];return c||null;}
@@ -412,7 +428,7 @@ function normProfile(p){
   if(p.sex==='f'||p.sex==='h')o.sex=p.sex;
   if(Object.prototype.hasOwnProperty.call(p,'baseFix'))o.baseFix=(p.baseFix===null||p.baseFix===''||!num(p.baseFix))?null:num(p.baseFix);
   if(Array.isArray(p.templates))o.templates=p.templates.map(function(t){return {id:t.id||uid(),n:String(t.n||'Repas type'),items:(t.items||[]).map(normItem)};});
-  if(Array.isArray(p.customFoods))o.customFoods=p.customFoods.filter(function(f){return f&&f.k;}).map(function(f){return {k:String(f.k),n:String(f.n||'Produit'),u:f.u==='pc'?'pc':'g',v:(f.v||[]).map(function(x){return num(x);}).concat([0,0,0,0,0]).slice(0,5),custom:true};});
+  if(Array.isArray(p.customFoods))o.customFoods=p.customFoods.filter(function(f){return f&&f.k;}).map(function(f){var c={k:String(f.k),n:String(f.n||'Produit'),u:f.u==='pc'?'pc':'g',v:(f.v||[]).map(function(x){return num(x);}).concat([0,0,0,0,0]).slice(0,5),custom:true};if(f.bc)c.bc=String(f.bc);if(f.quick)c.quick=true;return c;});
   if(Array.isArray(p.program))o.program=p.program.map(normEx);
   return o;
 }
@@ -611,7 +627,7 @@ function vRepas(){
         '<div class="q"><input type="number" inputmode="decimal" min="0" step="any" aria-label="Quantité" id="q-'+s[0]+'-'+it.id+'" data-f="item-q" data-slot="'+s[0]+'" data-i="'+i+'" value="'+it.q+'"><span>'+(it.u==='g'?'g':it.u==='pc'?'pc':'×')+'</span></div>'+
         '<div class="k" data-live="item-'+s[0]+'-'+i+'"></div><button class="x" data-act="del-item" data-slot="'+s[0]+'" data-i="'+i+'" aria-label="Retirer '+esc(it.n)+'">×</button></div>';
     }).join('')+'</div>':'<div class="empty">Rien pour l\'instant.</div>';
-    h+='<div class="btns"><button class="btn" data-act="add-food" data-slot="'+s[0]+'">+ Aliment</button>';
+    h+='<div class="btns"><button class="btn" data-act="add-quick" data-slot="'+s[0]+'">+ Repas rapide</button><button class="btn" data-act="add-food" data-slot="'+s[0]+'">+ Aliment</button>';
     p.templates.forEach(function(t,ti){h+='<button class="btn" data-act="add-tpl" data-slot="'+s[0]+'" data-t="'+ti+'">+ '+esc(t.n)+' <span class="muted">('+fmt(sumItems(t.items)[0])+')</span></button>';});
     if(list.length)h+='<button class="btn ghost" data-act="save-tpl" data-slot="'+s[0]+'">Enregistrer comme repas type</button>';
     h+='</div></section>';
@@ -786,6 +802,7 @@ view.addEventListener('click',function(e){
   var b=e.target.closest('[data-act]');if(!b)return;
   var a=b.dataset.act, d;
   if(a==='add-food'){openSheet(b.dataset.slot);return;}
+  if(a==='add-quick'){openSheet(b.dataset.slot,'quick');return;}
   if(a==='export'){exportData();return;}
   if(a==='paste-health'){
     if(!navigator.clipboard||!navigator.clipboard.readText){toast('Colle le texte dans le champ en dessous.');return;}
@@ -820,23 +837,24 @@ view.addEventListener('click',function(e){
 
 /* ---------- sheet ---------- */
 var sheet=document.getElementById('sheet'),scrim=document.getElementById('scrim'),sheetSlot='midi',picked=null;
-function openSheet(slot){
+function openSheet(slot,tab){
   sheetSlot=slot;picked=null;
+  ['qName','qKcal','qP','qG','qL'].forEach(function(id){document.getElementById(id).value='';});document.getElementById('qSave').checked=false;document.getElementById('qMore').open=false;
   document.getElementById('sheetTitle').textContent='Ajouter · '+SLOTS.filter(function(s){return s[0]===slot;})[0][1];
   document.getElementById('foodSearch').value='';document.getElementById('pick').hidden=true;
   ['cName','cQty','cKcal','cP','cG','cL','cF'].forEach(function(id){document.getElementById(id).value='';});
   ['cText','cCode','cPortionG'].forEach(function(id){document.getElementById(id).value='';});document.getElementById('cPortions').value=1;cBarcode=null;document.getElementById('labelBox').open=false;
   setBasis('100');document.getElementById('scanStatus').hidden=true;cPreview();
-  setSheetTab('list');drawFoods();sheet.hidden=false;scrim.hidden=false;
-  setTimeout(function(){document.getElementById('foodSearch').focus();},50);
+  tab=tab||'list';setSheetTab(tab);drawFoods();sheet.hidden=false;scrim.hidden=false;
+  setTimeout(function(){document.getElementById(tab==='quick'?'qName':'foodSearch').focus();},50);
 }
 function closeSheet(){sheet.hidden=true;scrim.hidden=true;}
-function setSheetTab(t){document.querySelectorAll('#sheetTabs button').forEach(function(b){b.classList.toggle('on',b.dataset.st===t);});document.getElementById('paneList').hidden=t!=='list';document.getElementById('paneCustom').hidden=t!=='custom';}
+function setSheetTab(t){document.querySelectorAll('#sheetTabs button').forEach(function(b){b.classList.toggle('on',b.dataset.st===t);});document.getElementById('paneList').hidden=t!=='list';document.getElementById('paneCustom').hidden=t!=='custom';document.getElementById('paneQuick').hidden=t!=='quick';}
 function norm(s){return s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');}
 function drawFoods(){
   var q=norm(document.getElementById('foodSearch').value.trim());
   var list=allFoods().filter(function(f){return !q||norm(f.n).indexOf(q)>=0;});
-  document.getElementById('foodList').innerHTML=list.length?list.map(function(f){return '<button class="food'+(picked&&picked.k===f.k?' on':'')+'" data-k="'+esc(f.k)+'"><span>'+esc(f.n)+(f.custom?'<span class="tag">perso</span>':'')+'</span><span>'+fmt(f.v[0])+' kcal'+(f.u==='g'?' / 100 g':' / pièce')+'</span></button>';}).join(''):'<div class="empty">Aucun aliment trouvé. Utilise l\'onglet Personnalisé.</div>';
+  document.getElementById('foodList').innerHTML=list.length?list.map(function(f){return '<button class="food'+(picked&&picked.k===f.k?' on':'')+'" data-k="'+esc(f.k)+'"><span>'+esc(f.n)+(f.custom?'<span class="tag">perso</span>':'')+'</span><span>'+fmt(f.v[0])+' kcal'+(f.u==='g'?' / 100 g':f.quick?' · '+fmt(f.v[1])+' g prot.':' / pièce')+'</span></button>';}).join(''):'<div class="empty">Aucun aliment trouvé. Utilise l\'onglet Personnalisé.</div>';
 }
 function pickPreview(){if(!picked)return;var q=num(document.getElementById('pickQty').value);var it={u:picked.u,v:picked.v,q:q};var v=itemVals(it);document.getElementById('pickKcal').textContent=fmt(v[0])+' kcal · '+fmt(v[1])+' g prot.';}
 document.getElementById('foodSearch').addEventListener('input',drawFoods);
@@ -1133,6 +1151,22 @@ $('bcFile').addEventListener('change',function(e){
 });
 $('cCodeGo').addEventListener('click',function(){lookupBarcode($('cCode').value);});
 $('cCode').addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();lookupBarcode($('cCode').value);}});
+/* repas rapide : nom + kcal + protéines (glucides, lipides facultatifs) */
+document.getElementById('qAdd').addEventListener('click',function(){
+  var g=function(id){return document.getElementById(id);};
+  var n=g('qName').value.trim(), kc=num(g('qKcal').value,NaN);
+  if(!n){toast('Donne un nom au repas.');g('qName').focus();return;}
+  if(!isFinite(kc)||kc<0){toast('Indique les calories.');g('qKcal').focus();return;}
+  var v=[kc,num(g('qP').value),num(g('qG').value),num(g('qL').value),0], k=null;
+  if(g('qSave').checked){
+    var prev=S.profile.customFoods.filter(function(f){return f.u==='pc'&&f.quick&&norm(f.n)===norm(n);})[0];
+    if(prev){prev.v=v.slice();k=prev.k;}else{k='c_'+uid();S.profile.customFoods.unshift({k:k,n:n,u:'pc',v:v.slice(),custom:true,quick:true});}
+    touch('profile');
+  }
+  day().meals[sheetSlot].push({id:uid(),k:k,n:n,u:'pc',q:1,v:v});
+  touch(S.key);closeSheet();render();toast(n+' ajouté');
+});
+['qName','qKcal','qP','qG','qL'].forEach(function(id){document.getElementById(id).addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();document.getElementById('qAdd').click();}});});
 document.getElementById('sheetTabs').addEventListener('click',function(e){var b=e.target.closest('[data-st]');if(b)setSheetTab(b.dataset.st);});
 document.getElementById('sheetClose').addEventListener('click',closeSheet);
 scrim.addEventListener('click',closeSheet);

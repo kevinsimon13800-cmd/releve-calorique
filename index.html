@@ -257,11 +257,11 @@ textarea{resize:vertical}
   <div class="seg" id="sheetTabs"><button data-st="quick">Rapide</button><button data-st="list" class="on">Liste</button><button data-st="custom">Personnalisé</button></div>
   <div class="sheetbody">
     <div id="paneQuick" class="stack" hidden>
-      <p class="hint">Tu as déjà pesé et calculé ton repas ? Saisis juste son nom, ses calories et ses protéines.</p>
+      <p class="hint">Tu as déjà pesé et calculé ton repas ? Saisis juste son nom et ses calories, les protéines si tu les connais.</p>
       <label class="f">Nom du repas <input type="text" id="qName" placeholder="Ex. : quiche jambon maison (1/6)" autocomplete="off"></label>
       <div class="grid2">
         <label class="f">Calories (kcal) <input type="number" id="qKcal" inputmode="decimal" min="0"></label>
-        <label class="f">Protéines (g) <input type="number" id="qP" inputmode="decimal" min="0"></label>
+        <label class="f">Protéines (g) <input type="number" id="qP" inputmode="decimal" min="0" placeholder="facultatif"></label>
       </div>
       <details class="method" id="qMore"><summary><b>Glucides et lipides</b><span class="muted small">facultatif</span></summary>
         <div class="grid2">
@@ -393,7 +393,7 @@ function normEx(e){
 }
 var DATE_RE=/^\d{4}-\d{2}-\d{2}$/;
 var LS_KEY='releve-calorique-v1';
-var APP_VERSION='1.6 (repas rapide)';
+var APP_VERSION='1.6.1 (repas rapide)';
 
 function uid(){return Math.random().toString(36).slice(2,10);}
 function getFood(k){if(FOOD[k])return FOOD[k];var c=(S&&S.profile&&S.profile.customFoods||[]).filter(function(f){return f.k===k;})[0];return c||null;}

@@ -137,13 +137,16 @@ input:focus-visible,select:focus-visible,textarea:focus-visible,button:focus-vis
 
 /* item lists */
 .items{display:grid;gap:6px}
-.item{display:grid;grid-template-columns:minmax(0,1fr) 84px 64px 32px;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line)}
+.item{display:grid;grid-template-columns:minmax(0,1fr) 76px 56px 32px 32px;gap:8px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line)}
 .item:last-child{border-bottom:0}
 .item .nm{font-size:14px;font-weight:500;min-width:0;overflow-wrap:anywhere}
 .item .nm small{display:block;color:var(--muted);font-weight:400;font-size:12px}
 .item .q{display:flex;align-items:center;gap:4px}
 .item .q input{padding:6px 6px;font-size:15px;text-align:right}
 .item .q span{font-size:12px;color:var(--muted)}
+.x.ed svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.x.ed:hover{background:var(--accent-soft);color:var(--accent)}
+.item .nm button{all:unset;cursor:pointer;display:block}
 .item .k{text-align:right;font-weight:600;font-size:14px;font-variant-numeric:tabular-nums}
 .x{width:32px;height:32px;border:0;background:none;border-radius:8px;color:var(--muted);font-size:20px;cursor:pointer}
 .x:hover{background:var(--bad-soft);color:var(--bad)}
@@ -224,7 +227,7 @@ textarea{resize:vertical}
 .food .tag{display:inline-block;font-size:11px;font-weight:600;color:var(--accent);margin-left:6px}
 .btn.file{position:relative;overflow:hidden}
 .btn.file input{position:absolute;inset:0;opacity:0;cursor:pointer}
-@media (max-width:380px){ .big .n{font-size:54px} .item{grid-template-columns:minmax(0,1fr) 74px 56px 28px} .exgrid,.exgrid.iso{grid-template-columns:repeat(3,minmax(0,1fr))} .exgrid.iso{grid-template-columns:repeat(2,minmax(0,1fr))} .exgrid .k{grid-column:1/-1;padding:0} }
+@media (max-width:380px){ .big .n{font-size:54px} .item{grid-template-columns:minmax(0,1fr) 66px 50px 30px 28px;gap:6px} .exgrid,.exgrid.iso{grid-template-columns:repeat(3,minmax(0,1fr))} .exgrid.iso{grid-template-columns:repeat(2,minmax(0,1fr))} .exgrid .k{grid-column:1/-1;padding:0} }
 </style>
 </head>
 <body>
@@ -256,6 +259,22 @@ textarea{resize:vertical}
   <div class="sheethead"><h2 id="sheetTitle">Ajouter un aliment</h2><button class="x" id="sheetClose" aria-label="Fermer">×</button></div>
   <div class="seg" id="sheetTabs"><button data-st="quick">Rapide</button><button data-st="list" class="on">Liste</button><button data-st="custom">Personnalisé</button></div>
   <div class="sheetbody">
+    <div id="paneEdit" class="stack" hidden>
+      <label class="f">Nom <input type="text" id="eName" autocomplete="off"></label>
+      <div class="grid2">
+        <label class="f"><span id="eQtyLbl">Quantité</span> <input type="number" id="eQty" inputmode="decimal" min="0" step="any"></label>
+        <label class="f">Repas <select id="eSlot"><option value="midi">Midi</option><option value="soir">Soir</option><option value="extra">Extras et collations</option></select></label>
+      </div>
+      <div class="small muted" id="eBasis">Valeurs pour 100 g</div>
+      <div class="grid2">
+        <label class="f">Calories (kcal) <input type="number" id="eKcal" inputmode="decimal" min="0"></label>
+        <label class="f">Protéines (g) <input type="number" id="eP" inputmode="decimal" min="0" placeholder="facultatif"></label>
+        <label class="f">Glucides (g) <input type="number" id="eG" inputmode="decimal" min="0" placeholder="facultatif"></label>
+        <label class="f">Lipides (g) <input type="number" id="eL" inputmode="decimal" min="0" placeholder="facultatif"></label>
+      </div>
+      <div class="calc"><span>Total de ce repas</span><b id="ePreview">0 kcal</b></div>
+      <div class="btns"><button class="btn primary" id="eSave">Enregistrer</button><button class="btn" id="eDel">Supprimer</button></div>
+    </div>
     <div id="paneQuick" class="stack" hidden>
       <p class="hint">Tu as déjà pesé et calculé ton repas ? Saisis juste son nom et ses calories, les protéines si tu les connais.</p>
       <label class="f">Nom du repas <input type="text" id="qName" placeholder="Ex. : quiche jambon maison (1/6)" autocomplete="off"></label>
@@ -393,7 +412,7 @@ function normEx(e){
 }
 var DATE_RE=/^\d{4}-\d{2}-\d{2}$/;
 var LS_KEY='releve-calorique-v1';
-var APP_VERSION='1.6.1 (repas rapide)';
+var APP_VERSION='1.7 (modifier un repas)';
 
 function uid(){return Math.random().toString(36).slice(2,10);}
 function getFood(k){if(FOOD[k])return FOOD[k];var c=(S&&S.profile&&S.profile.customFoods||[]).filter(function(f){return f.k===k;})[0];return c||null;}
@@ -623,9 +642,9 @@ function vRepas(){
     var list=d.meals[s[0]];
     h+='<section class="card"><div class="cardhead"><h2>'+s[1]+'</h2><span class="v num" data-live="slot-'+s[0]+'"></span></div>';
     h+=list.length?'<div class="items">'+list.map(function(it,i){
-      return '<div class="item"><div class="nm">'+esc(it.n)+(it.k?'':'<small>Saisie personnalisée</small>')+'</div>'+
+      return '<div class="item"><div class="nm"><button data-act="edit-item" data-slot="'+s[0]+'" data-i="'+i+'">'+esc(it.n)+(it.k?'':'<small>Saisie personnalisée</small>')+'</button></div>'+
         '<div class="q"><input type="number" inputmode="decimal" min="0" step="any" aria-label="Quantité" id="q-'+s[0]+'-'+it.id+'" data-f="item-q" data-slot="'+s[0]+'" data-i="'+i+'" value="'+it.q+'"><span>'+(it.u==='g'?'g':it.u==='pc'?'pc':'×')+'</span></div>'+
-        '<div class="k" data-live="item-'+s[0]+'-'+i+'"></div><button class="x" data-act="del-item" data-slot="'+s[0]+'" data-i="'+i+'" aria-label="Retirer '+esc(it.n)+'">×</button></div>';
+        '<div class="k" data-live="item-'+s[0]+'-'+i+'"></div><button class="x ed" data-act="edit-item" data-slot="'+s[0]+'" data-i="'+i+'" aria-label="Modifier '+esc(it.n)+'"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16v4z"/><path d="M14 6l4 4"/></svg></button><button class="x" data-act="del-item" data-slot="'+s[0]+'" data-i="'+i+'" aria-label="Retirer '+esc(it.n)+'">×</button></div>';
     }).join('')+'</div>':'<div class="empty">Rien pour l\'instant.</div>';
     h+='<div class="btns"><button class="btn" data-act="add-quick" data-slot="'+s[0]+'">+ Repas rapide</button><button class="btn" data-act="add-food" data-slot="'+s[0]+'">+ Aliment</button>';
     p.templates.forEach(function(t,ti){h+='<button class="btn" data-act="add-tpl" data-slot="'+s[0]+'" data-t="'+ti+'">+ '+esc(t.n)+' <span class="muted">('+fmt(sumItems(t.items)[0])+')</span></button>';});
@@ -803,6 +822,7 @@ view.addEventListener('click',function(e){
   var a=b.dataset.act, d;
   if(a==='add-food'){openSheet(b.dataset.slot);return;}
   if(a==='add-quick'){openSheet(b.dataset.slot,'quick');return;}
+  if(a==='edit-item'){openEdit(b.dataset.slot,+b.dataset.i);return;}
   if(a==='export'){exportData();return;}
   if(a==='paste-health'){
     if(!navigator.clipboard||!navigator.clipboard.readText){toast('Colle le texte dans le champ en dessous.');return;}
@@ -848,8 +868,8 @@ function openSheet(slot,tab){
   tab=tab||'list';setSheetTab(tab);drawFoods();sheet.hidden=false;scrim.hidden=false;
   setTimeout(function(){document.getElementById(tab==='quick'?'qName':'foodSearch').focus();},50);
 }
-function closeSheet(){sheet.hidden=true;scrim.hidden=true;}
-function setSheetTab(t){document.querySelectorAll('#sheetTabs button').forEach(function(b){b.classList.toggle('on',b.dataset.st===t);});document.getElementById('paneList').hidden=t!=='list';document.getElementById('paneCustom').hidden=t!=='custom';document.getElementById('paneQuick').hidden=t!=='quick';}
+function closeSheet(){sheet.hidden=true;scrim.hidden=true;edit=null;}
+function setSheetTab(t){document.querySelectorAll('#sheetTabs button').forEach(function(b){b.classList.toggle('on',b.dataset.st===t);});document.getElementById('paneList').hidden=t!=='list';document.getElementById('paneCustom').hidden=t!=='custom';document.getElementById('paneQuick').hidden=t!=='quick';document.getElementById('paneEdit').hidden=t!=='edit';document.getElementById('sheetTabs').hidden=t==='edit';}
 function norm(s){return s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');}
 function drawFoods(){
   var q=norm(document.getElementById('foodSearch').value.trim());
@@ -1151,6 +1171,45 @@ $('bcFile').addEventListener('change',function(e){
 });
 $('cCodeGo').addEventListener('click',function(){lookupBarcode($('cCode').value);});
 $('cCode').addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();lookupBarcode($('cCode').value);}});
+/* modification d'un repas déjà saisi (n'importe quel jour) */
+var edit=null;
+function eVals(){return [num($('eKcal').value),num($('eP').value),num($('eG').value),num($('eL').value)];}
+function ePreview(){
+  if(!edit)return;var v=eVals(),q=num($('eQty').value),f=edit.u==='g'?q/100:q;
+  $('ePreview').textContent=fmt(v[0]*f)+' kcal · '+fmt(v[1]*f)+' g prot.';
+}
+function openEdit(slot,i){
+  var d=peek(S.key);if(!d)return;var it=d.meals[slot]&&d.meals[slot][i];if(!it)return;
+  edit={key:S.key,slot:slot,id:it.id,u:it.u};
+  $('sheetTitle').textContent='Modifier · '+SLOTS.filter(function(s){return s[0]===slot;})[0][1]+' · '+(S.key===todayKey()?'aujourd\'hui':label(S.key,{weekday:'long',day:'numeric',month:'long'}));
+  $('eName').value=it.n;$('eQty').value=it.q;$('eSlot').value=slot;
+  $('eQtyLbl').textContent=it.u==='g'?'Quantité (g)':'Nombre de portions';
+  $('eBasis').textContent=it.u==='g'?'Valeurs pour 100 g':'Valeurs pour 1 portion';
+  [['eKcal',0],['eP',1],['eG',2],['eL',3]].forEach(function(m){var x=it.v[m[1]];$(m[0]).value=x?Math.round(x*10)/10:(m[1]===0?0:'');});
+  $('eDel').textContent='Supprimer';$('eDel').dataset.confirm='';
+  setSheetTab('edit');ePreview();sheet.hidden=false;scrim.hidden=false;
+  setTimeout(function(){$('eKcal').focus();},50);
+}
+function findEdit(){var d=S.days[edit.key];if(!d)return null;var list=d.meals[edit.slot],i=list.map(function(x){return x.id;}).indexOf(edit.id);return i<0?null:{d:d,list:list,i:i};}
+['eQty','eKcal','eP','eG','eL'].forEach(function(id){$(id).addEventListener('input',ePreview);$(id).addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();$('eSave').click();}});});
+$('eSave').addEventListener('click',function(){
+  if(!edit)return;var f=findEdit();if(!f){closeSheet();render();return;}
+  var n=$('eName').value.trim(),kc=num($('eKcal').value,NaN),q=num($('eQty').value,NaN);
+  if(!n){toast('Donne un nom au repas.');$('eName').focus();return;}
+  if(!isFinite(kc)||kc<0){toast('Indique les calories.');$('eKcal').focus();return;}
+  if(!isFinite(q)||q<=0){toast('Indique une quantité supérieure à 0.');$('eQty').focus();return;}
+  var it=f.list[f.i],v=eVals();
+  it.n=n;it.q=q;it.v=[v[0],v[1],v[2],v[3],it.v[4]||0];
+  var ns=$('eSlot').value;if(ns!==edit.slot&&f.d.meals[ns]){f.list.splice(f.i,1);f.d.meals[ns].push(it);}
+  touch(edit.key);edit=null;closeSheet();render();toast('Repas modifié');
+});
+$('eDel').addEventListener('click',function(){
+  if(!edit)return;var b=$('eDel');
+  if(b.dataset.confirm!=='1'){b.dataset.confirm='1';b.textContent='Confirmer la suppression';return;}
+  var f=findEdit();if(f){f.list.splice(f.i,1);touch(edit.key);}
+  edit=null;closeSheet();render();toast('Repas supprimé');
+});
+
 /* repas rapide : nom + kcal + protéines (glucides, lipides facultatifs) */
 document.getElementById('qAdd').addEventListener('click',function(){
   var g=function(id){return document.getElementById(id);};

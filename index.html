@@ -61,11 +61,15 @@ h1,h2,h3{margin:0;text-wrap:balance}
 .sync{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)}
 .sync i{width:8px;height:8px;border-radius:50%;background:var(--muted)}
 .sync.db i{background:var(--good)} .sync.local i{background:var(--warn)}
-.datebar{display:grid;grid-template-columns:44px 1fr 44px;align-items:center;background:var(--surface);border:1px solid var(--line);border-radius:12px}
+.datebar{position:relative;display:grid;grid-template-columns:44px 1fr 44px;align-items:center;background:var(--surface);border:1px solid var(--line);border-radius:12px}
 .datebar button{height:42px;border:0;background:none;font-size:22px;cursor:pointer;color:var(--accent)}
 .datebar button:disabled{color:var(--line);cursor:default}
 .datebar .d{text-align:center;font-weight:600}
 .datebar .d small{display:block;font-weight:500;font-size:12px;color:var(--muted)}
+.datebar .d .fut{display:inline-block;margin-left:6px;padding:1px 7px;border-radius:999px;background:var(--accent-soft);color:var(--accent);font-size:11px;font-weight:700;vertical-align:2px}
+#datePick{position:absolute;left:44px;right:44px;top:0;bottom:0;width:calc(100% - 88px);opacity:0;border:0;padding:0;cursor:pointer;-webkit-appearance:none;appearance:none}
+.daynav{display:flex;justify-content:center}
+.daynav .chip{padding:5px 12px}
 
 /* cards */
 .stack{display:grid;gap:14px}
@@ -241,7 +245,9 @@ textarea{resize:vertical}
       <button id="prevDay" aria-label="Jour précédent">‹</button>
       <div class="d" id="dateLabel"></div>
       <button id="nextDay" aria-label="Jour suivant">›</button>
+      <input type="date" id="datePick" aria-label="Choisir une date">
     </div>
+    <div class="daynav"><button class="chip" id="todayBtn" hidden>↺ Revenir à aujourd'hui</button></div>
   </header>
   <main id="view" class="stack"></main>
 </div>
@@ -412,7 +418,7 @@ function normEx(e){
 }
 var DATE_RE=/^\d{4}-\d{2}-\d{2}$/;
 var LS_KEY='releve-calorique-v1';
-var APP_VERSION='1.7 (modifier un repas)';
+var APP_VERSION='1.8 (repas à l\'avance)';
 
 function uid(){return Math.random().toString(36).slice(2,10);}
 function getFood(k){if(FOOD[k])return FOOD[k];var c=(S&&S.profile&&S.profile.customFoods||[]).filter(function(f){return f.k===k;})[0];return c||null;}
@@ -555,8 +561,8 @@ function compute(key){
   return {d:d,w:w,base:base,walk:walk,walkEst:walkEst,bike:bike,bikeEst:bikeEst,ex:ex,out:out,inK:tot[0],mac:tot,slots:slots,bal:tot[0]-out,deficit:out-tot[0],has:all.length>0,mealsFull:d.meals.midi.length>0&&d.meals.soir.length>0};
 }
 function status(c,key){
-  var p=S.profile, today=key===todayKey();
-  if(!c.has)return {cls:'neutral',t:'Aucun repas saisi',h:today?"Ajoute tes repas dans l'onglet Repas pour voir ton bilan.":"Aucun repas n'a été saisi ce jour-là."};
+  var p=S.profile, today=key===todayKey(), fut=key>todayKey();
+  if(!c.has)return {cls:'neutral',t:fut?'Aucun repas prévu':'Aucun repas saisi',h:fut?"Prépare tes repas à l'avance dans l'onglet Repas : le bilan prévisionnel s'affichera ici.":today?"Ajoute tes repas dans l'onglet Repas pour voir ton bilan.":"Aucun repas n'a été saisi ce jour-là."};
   var def=c.deficit;
   if(def>p.defMax)return {cls:'bad',t:'Déficit trop fort',h:"Au-delà de "+fmt(p.defMax)+" kcal, tu risques de puiser dans ton muscle. Ajoute une collation protéinée, par exemple un fromage blanc."};
   if(def>=p.defMin)return {cls:'good',t:'Dans ta cible',h:"Déficit entre "+fmt(p.defMin)+" et "+fmt(p.defMax)+" kcal : rythme solide, muscle protégé."};
@@ -575,9 +581,11 @@ var view=document.getElementById('view');
 function render(){
   var tk=todayKey();
   var dl=document.getElementById('dateLabel');
-  var isT=S.key===tk, isY=S.key===shift(tk,-1);
-  dl.innerHTML=(isT?"Aujourd'hui":isY?'Hier':esc(cap(label(S.key,{weekday:'long'}))))+'<small>'+esc(label(S.key,{day:'numeric',month:'long',year:'numeric'}))+'</small>';
-  document.getElementById('nextDay').disabled=S.key>=tk;
+  var isT=S.key===tk, isY=S.key===shift(tk,-1), isD=S.key===shift(tk,1), fut=S.key>tk;
+  dl.innerHTML=(isT?"Aujourd'hui":isY?'Hier':isD?'Demain':esc(cap(label(S.key,{weekday:'long'}))))+(fut?'<span class="fut">prévu</span>':'')+'<small>'+esc(label(S.key,{day:'numeric',month:'long',year:'numeric'}))+'</small>';
+  document.getElementById('nextDay').disabled=false;
+  document.getElementById('datePick').value=S.key;
+  document.getElementById('todayBtn').hidden=isT||S.tab==='histo'||S.tab==='profil';
   document.querySelectorAll('#tabs button').forEach(function(b){b.classList.toggle('on',b.dataset.tab===S.tab);});
   document.querySelector('.datebar').hidden=(S.tab==='histo'||S.tab==='profil');
   view.innerHTML=({bilan:vBilan,repas:vRepas,sport:vSport,histo:vHisto,profil:vProfil})[S.tab]();
@@ -601,7 +609,8 @@ function vBilan(){
   var c=compute(S.key), st=status(c,S.key), today=S.key===todayKey(), p=S.profile;
   var defi=c.deficit, big=c.has?fmt(Math.abs(defi)):'—', lbl=c.has?(defi>=0?'de déficit':'de surplus'):'';
   var mx=Math.max(c.inK,c.out,1);
-  var h='<section class="hero"><div class="eyebrow">Bilan du jour'+(today?' · en cours':'')+'</div>'+
+  var fut=S.key>todayKey();
+  var h='<section class="hero"><div class="eyebrow">'+(fut?'Bilan prévisionnel':'Bilan du jour'+(today?' · en cours':''))+'</div>'+
     '<div class="big"><span class="n num">'+big+'</span>'+(c.has?'<span class="u">kcal</span><span class="lbl">'+lbl+'</span>':'')+'</div>'+
     '<span class="pill '+st.cls+'">'+esc(st.t)+'</span><p class="hint">'+esc(st.h)+'</p>'+
     (c.has?gauge(defi):'')+
@@ -609,7 +618,7 @@ function vBilan(){
     '<div class="ioline"><span>Dépensé</span><div class="iobar"><i style="width:'+(c.out/mx*100)+'%;background:var(--accent)"></i></div><span class="v">'+fmt(c.out)+' kcal</span></div></div>'+
     (c.has&&defi>0?'<div class="small muted">Soit environ <b class="num" style="color:var(--ink)">'+fmt(defi/7.7)+' g de gras</b> en moins (7 700 kcal par kilo).</div>':'')+
     '</section>';
-  if(c.has&&c.inK<1500&&(!today||c.mealsFull))h+='<div class="note bad">Apport sous 1 500 kcal : c\'est le minimum qu\'on s\'était fixé. En dessous, tu risques de reprendre le chemin du régime à 500 kcal.</div>';
+  if(c.has&&c.inK<1500&&((!today&&!fut)||c.mealsFull))h+='<div class="note bad">Apport sous 1 500 kcal : c\'est le minimum qu\'on s\'était fixé. En dessous, tu risques de reprendre le chemin du régime à 500 kcal.</div>';
   h+='<section class="card"><div class="cardhead"><h2>Dépense</h2><span class="v num">'+fmt(c.out)+' kcal</span></div><div class="rows">'+
     row(p.baseFix?'En existant (valeur fixée)':'Métabolisme et vie quotidienne',c.base)+row('Marche ('+fmt(c.d.steps)+' pas)'+(c.d.stepKcal!==null?' · Santé':''),c.walk)+row('Vélo d\'appartement',c.bike)+row('Renforcement',c.ex)+'</div></section>';
   h+='<section class="card"><div class="cardhead"><h2>Apport</h2><span class="v num">'+fmt(c.inK)+' kcal</span></div><div class="rows">'+
@@ -622,7 +631,7 @@ function vBilan(){
       macro('Glucides',c.mac[2],null,null,'Carburant du vélo')+'</div>';
   }
   h+='</section>';
-  h+='<section class="card"><h2>Poids du matin</h2><div class="grid2"><label class="f">Poids (kg) <input type="number" id="f-weight" data-f="weight" inputmode="decimal" step="0.1" min="30" placeholder="'+fmt1(weightFor(S.key))+'" value="'+(c.d.weight||'')+'"></label>'+
+  if(!fut)h+='<section class="card"><h2>Poids du matin</h2><div class="grid2"><label class="f">Poids (kg) <input type="number" id="f-weight" data-f="weight" inputmode="decimal" step="0.1" min="30" placeholder="'+fmt1(weightFor(S.key))+'" value="'+(c.d.weight||'')+'"></label>'+
     '<div class="small muted" style="align-self:end">À jeun, après les toilettes. Les calculs utilisent ton dernier poids saisi.</div></div></section>';
   return h;
 }
@@ -699,6 +708,10 @@ function vHisto(){
   if(wk.length>=2){h+=spark(wk.slice(-30));}
   var cur=weightFor(tk);
   h+='<div class="small muted">Objectif plancher : '+fmt1(p.floor)+' kg'+(cur>p.floor?' · encore '+fmt1(cur-p.floor)+' kg':' · atteint, passe en stabilisation')+'. '+(wk.length<2?'Saisis ton poids du matin dans le Bilan pour voir la courbe.':'')+'</div></section>';
+  var futK=Object.keys(S.days).filter(function(k){return k>tk&&SLOTS.some(function(s){return S.days[k].meals[s[0]].length;});}).sort();
+  if(futK.length)h+='<section class="card"><h2>Repas prévus</h2><div>'+futK.map(function(k){var c=compute(k);
+    return '<button class="hrow" data-act="goto" data-k="'+k+'"><span class="dt">'+esc(cap(label(k,{weekday:'short',day:'numeric',month:'short'})))+'</span><span class="bl">'+fmt(c.inK)+' kcal</span><span class="sub">'+fmt(c.mac[1])+' g de protéines · '+SLOTS.reduce(function(a,s){return a+S.days[k].meals[s[0]].length;},0)+' élément(s)</span></button>';
+  }).join('')+'</div></section>';
   h+='<section class="card"><h2>Jours enregistrés</h2>';
   if(!keys.length)h+='<div class="empty">Ton historique apparaîtra ici dès ta première journée saisie.</div>';
   else h+='<div>'+keys.slice(0,60).map(function(k){
@@ -778,7 +791,9 @@ function live(){
 /* ---------- events ---------- */
 document.getElementById('tabs').addEventListener('click',function(e){var b=e.target.closest('button[data-tab]');if(!b)return;S.tab=b.dataset.tab;render();window.scrollTo(0,0);});
 document.getElementById('prevDay').addEventListener('click',function(){S.key=shift(S.key,-1);render();});
-document.getElementById('nextDay').addEventListener('click',function(){if(S.key<todayKey()){S.key=shift(S.key,1);render();}});
+document.getElementById('nextDay').addEventListener('click',function(){S.key=shift(S.key,1);render();});
+document.getElementById('todayBtn').addEventListener('click',function(){S.key=todayKey();render();window.scrollTo(0,0);});
+document.getElementById('datePick').addEventListener('change',function(e){if(DATE_RE.test(e.target.value)){S.key=e.target.value;render();}});
 
 function parseNum(s){var t=String(s).replace(/[\s  ]/g,'');if(/,\d{3}$/.test(t)&&!/\./.test(t))t=t.replace(/,/g,'');t=t.replace(',','.');return parseFloat(t);}
 function parsePaste(txt){

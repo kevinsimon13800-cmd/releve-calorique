@@ -184,6 +184,21 @@ details p{color:var(--muted);margin:.5em 0 0;max-width:62ch}
 .kpi{background:var(--surface-2);border-radius:10px;padding:10px;display:grid;gap:2px;min-width:0}
 .kpi b{font-family:var(--f-display);font-size:24px;font-weight:700;line-height:1}
 .kpi span{font-size:12px;color:var(--muted)}
+.pernav{display:grid;grid-template-columns:40px 1fr 40px;align-items:center;gap:6px}
+.pernav button{height:36px;border:1px solid var(--line);background:var(--surface-2);border-radius:10px;font-size:20px;color:var(--accent);cursor:pointer}
+.pernav button:disabled{color:var(--line);cursor:default}
+.pernav b{text-align:center;font-weight:600;font-size:15px}
+.perseg{display:flex;flex-wrap:wrap}
+.perseg button{flex:1 1 auto;padding-inline:8px;font-size:13px;white-space:nowrap}
+.blk{display:grid;gap:6px}
+.blk h3{font-family:var(--f-display);font-weight:600;font-size:14px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:4px 0 0}
+.ptab{width:100%;border-collapse:collapse;font-size:14px;font-variant-numeric:tabular-nums}
+.ptab th{text-align:right;font-weight:600;font-size:12px;color:var(--muted);padding:4px 0}
+.ptab th:first-child,.ptab td:first-child{text-align:left}
+.ptab td{text-align:right;padding:6px 0;border-top:1px solid var(--line)}
+.ptab td:not(:first-child){font-weight:600}
+.ptab .m{color:var(--muted);font-weight:500}
+.kpi.good b{color:var(--good)} .kpi.warn b{color:var(--warn)}
 
 /* tab bar */
 .tabbar{position:fixed;left:0;right:0;bottom:0;z-index:6;background:var(--surface);border-top:1px solid var(--line);padding:6px 8px calc(6px + env(safe-area-inset-bottom,0px))}
@@ -418,7 +433,7 @@ function normEx(e){
 }
 var DATE_RE=/^\d{4}-\d{2}-\d{2}$/;
 var LS_KEY='releve-calorique-v1';
-var APP_VERSION='1.8 (repas à l\'avance)';
+var APP_VERSION='1.9 (bilans de période)';
 
 function uid(){return Math.random().toString(36).slice(2,10);}
 function getFood(k){if(FOOD[k])return FOOD[k];var c=(S&&S.profile&&S.profile.customFoods||[]).filter(function(f){return f.k===k;})[0];return c||null;}
@@ -546,6 +561,92 @@ function weightFor(key){
 }
 function bmrFor(w){var p=S.profile;return 10*w+6.25*p.height-5*p.age+(p.sex==='f'?-161:5);}
 function stepKm(steps){return steps*S.profile.height*0.415/100000;}
+/* ---------- bilans de période ---------- */
+var PERIODS=[['sem','Semaine'],['mois','Mois'],['trim','Trimestre'],['sem6','Semestre'],['an','Année']];
+var PER={type:'sem',off:0};
+function periodRange(type,off){
+  var t=new Date(todayKey()+'T12:00:00'),s,e;
+  if(type==='sem'){var dow=(t.getDay()+6)%7;s=new Date(t);s.setDate(t.getDate()-dow+7*off);e=new Date(s);e.setDate(s.getDate()+6);}
+  else{var len={mois:1,trim:3,sem6:6,an:12}[type],m0=t.getMonth(),sm=(type==='mois'?m0:type==='trim'?m0-m0%3:type==='sem6'?m0-m0%6:0)+off*len;
+    s=new Date(t.getFullYear(),sm,1,12);e=new Date(t.getFullYear(),sm+len,0,12);}
+  return {s:keyOf(s),e:keyOf(e),type:type};
+}
+function periodLabel(r){
+  var s=new Date(r.s+'T12:00:00'),y=s.getFullYear(),m=s.getMonth();
+  if(r.type==='sem')return 'Du '+label(r.s,{day:'numeric',month:'short'})+' au '+label(r.e,{day:'numeric',month:'short',year:'numeric'});
+  if(r.type==='mois')return cap(label(r.s,{month:'long',year:'numeric'}));
+  if(r.type==='trim')return 'T'+(Math.floor(m/3)+1)+' '+y+' · '+label(r.s,{month:'short'})+' – '+label(r.e,{month:'short'});
+  if(r.type==='sem6')return (m<6?'1er':'2e')+' semestre '+y;
+  return 'Année '+y;
+}
+function periodStats(r){
+  var tk=todayKey(),last=r.e<tk?r.e:tk,st={elapsed:0,total:0,mealDays:0,inK:0,out:0,def:0,P:0,G:0,L:0,F:0,steps:0,walkKm:0,walkK:0,bikeKm:0,bikeK:0,exK:0,reps:0,holdS:0,activeDays:0,series:[],w:[]};
+  for(var k=r.s;k<=r.e;k=shift(k,1))st.total++;
+  if(r.s>tk)return st;
+  for(k=r.s;k<=last;k=shift(k,1)){
+    st.elapsed++;var d=S.days[k];if(!d){st.series.push({k:k,def:null});continue;}
+    var c=compute(k);
+    if(c.has){st.mealDays++;st.inK+=c.inK;st.out+=c.out;st.def+=c.deficit;st.P+=c.mac[1];st.G+=c.mac[2];st.L+=c.mac[3];st.F+=c.mac[4];}
+    st.steps+=d.steps||0;st.walkKm+=stepKm(d.steps||0);st.walkK+=c.walk;st.bikeKm+=d.bike.km||0;st.bikeK+=c.bike;st.exK+=c.ex;
+    d.ex.forEach(function(e){if(exoOf(e).iso)st.holdS+=exCount(e);else st.reps+=exCount(e);});
+    if(d.steps||d.stepKcal||d.bike.km||d.bike.kcal||d.ex.length)st.activeDays++;
+    if(d.weight)st.w.push({k:k,v:d.weight});
+    st.series.push({k:k,def:c.has?c.deficit:null});
+  }
+  return st;
+}
+function perChart(st,r){
+  var pts=st.series,groups=[];
+  if(r.type==='sem'||r.type==='mois')groups=pts.map(function(x){return {k:x.k,v:x.def,lbl:label(x.k,{day:'numeric'})};});
+  else{var cur=null;pts.forEach(function(x){var wk=new Date(x.k+'T12:00:00');var dow=(wk.getDay()+6)%7;wk.setDate(wk.getDate()-dow);var key=keyOf(wk);
+      if(!cur||cur.k!==key){cur={k:key,sum:0,n:0,lbl:label(key,{day:'numeric',month:'short'})};groups.push(cur);}if(x.def!==null){cur.sum+=x.def;cur.n++;}});
+    groups=groups.map(function(g){return {k:g.k,v:g.n?g.sum/g.n:null,lbl:g.lbl};});}
+  var vals=groups.filter(function(g){return g.v!==null;});
+  if(vals.length<2)return '';
+  var p=S.profile,W=320,H=130,pl=34,pr=6,pt=8,pb=20;
+  var mx=Math.max(p.defMax+300,Math.max.apply(null,vals.map(function(g){return g.v;}))),mn=Math.min(0,Math.min.apply(null,vals.map(function(g){return g.v;})));
+  function Y(v){return pt+(mx-v)/(mx-mn)*(H-pt-pb);}
+  var bw=(W-pl-pr)/groups.length,svg='';
+  svg+='<rect x="'+pl+'" y="'+Y(p.defMax)+'" width="'+(W-pl-pr)+'" height="'+(Y(p.defMin)-Y(p.defMax))+'" fill="var(--zone)"/>';
+  [0,p.defMin,p.defMax].forEach(function(v){svg+='<line x1="'+pl+'" x2="'+(W-pr)+'" y1="'+Y(v)+'" y2="'+Y(v)+'" stroke="var(--line)" stroke-width="1"/><text x="'+(pl-4)+'" y="'+(Y(v)+4)+'" text-anchor="end" font-size="10" fill="var(--muted)">'+fmt(v)+'</text>';});
+  var step=Math.ceil(groups.length/8);
+  groups.forEach(function(g,i){var x=pl+i*bw+bw*0.15,w=Math.max(2,bw*0.7);
+    if(g.v!==null){var y0=Y(0),y1=Y(g.v),col=g.v>p.defMax?'var(--bad)':g.v>=p.defMin?'var(--good)':g.v>=0?'var(--accent)':'var(--warn)';
+      svg+='<rect x="'+x.toFixed(1)+'" y="'+Math.min(y0,y1).toFixed(1)+'" width="'+w.toFixed(1)+'" height="'+Math.max(1,Math.abs(y1-y0)).toFixed(1)+'" rx="2" fill="'+col+'"/>';}
+    if(i%step===0)svg+='<text x="'+(pl+i*bw+bw/2).toFixed(1)+'" y="'+(H-6)+'" text-anchor="middle" font-size="10" fill="var(--muted)">'+esc(g.lbl)+'</text>';});
+  return '<svg class="spark" viewBox="0 0 '+W+' '+H+'" role="img" aria-label="Déficit '+(r.type==='sem'||r.type==='mois'?'par jour':'moyen par semaine')+'">'+svg+'</svg>'+
+    '<div class="small muted">'+(r.type==='sem'||r.type==='mois'?'Déficit par jour':'Déficit moyen par jour, semaine par semaine')+'. Zone verte : ta cible ('+fmt(p.defMin)+' à '+fmt(p.defMax)+' kcal).</div>';
+}
+function vPeriod(){
+  var r=periodRange(PER.type,PER.off),st=periodStats(r),p=S.profile;
+  var h='<section class="card" id="perCard"><h2>Bilan de période</h2>'+
+    '<div class="seg perseg" role="group" aria-label="Période">'+PERIODS.map(function(o){return '<button data-act="per" data-v="'+o[0]+'" class="'+(PER.type===o[0]?'on':'')+'">'+o[1]+'</button>';}).join('')+'</div>'+
+    '<div class="pernav"><button data-act="per-nav" data-v="-1" aria-label="Période précédente">‹</button><b>'+esc(periodLabel(r))+'</b><button data-act="per-nav" data-v="1" aria-label="Période suivante"'+(PER.off>=0?' disabled':'')+'>›</button></div>';
+  if(!st.mealDays&&!st.activeDays){return h+'<div class="empty">Aucune donnée saisie sur cette période.</div></section>';}
+  var fat=st.def/7700, md=st.mealDays||1, el=st.elapsed||1, sportK=st.walkK+st.bikeK+st.exK;
+  var wDelta=st.w.length>=2?st.w[st.w.length-1].v-st.w[0].v:null;
+  h+='<div class="kpis">'+
+    '<div class="kpi '+(fat>0?'good':'warn')+'"><b class="num">'+(st.mealDays?(fat>=0?'−':'+')+fmt1(Math.abs(fat)):'—')+'</b><span>kg de gras '+(fat>=0?'perdus':'pris')+' (estimé)</span></div>'+
+    '<div class="kpi"><b class="num">'+(st.mealDays?fmt(st.def/md):'—')+'</b><span>kcal de déficit moyen par jour</span></div>'+
+    '<div class="kpi"><b class="num">'+st.mealDays+'/'+st.elapsed+'</b><span>jours avec repas saisis'+(st.elapsed<st.total?' (période en cours)':'')+'</span></div></div>';
+  h+=perChart(st,r);
+  h+='<div class="blk"><h3>Énergie</h3><table class="ptab"><tr><th></th><th>Total</th><th>Moy. / jour</th></tr>'+
+    '<tr><td>Mangé</td><td>'+fmt(st.inK)+' kcal</td><td class="m">'+fmt(st.inK/md)+'</td></tr>'+
+    '<tr><td>Dépensé</td><td>'+fmt(st.out)+' kcal</td><td class="m">'+fmt(st.out/md)+'</td></tr>'+
+    '<tr><td>'+(st.def>=0?'Déficit':'Surplus')+'</td><td>'+fmt(Math.abs(st.def))+' kcal</td><td class="m">'+fmt(Math.abs(st.def)/md)+'</td></tr></table></div>';
+  h+='<div class="blk"><h3>Nutrition</h3><table class="ptab"><tr><th></th><th>Total</th><th>Moy. / jour</th></tr>'+
+    [['Protéines',st.P],['Glucides',st.G],['Lipides',st.L],['Fibres',st.F]].map(function(x){return '<tr><td>'+x[0]+'</td><td>'+fmt(x[1])+' g</td><td class="m">'+fmt1(x[1]/md)+' g</td></tr>';}).join('')+
+    '</table><div class="small muted">Cible protéines : '+fmt(p.protMin)+' à '+fmt(p.protMax)+' g par jour.</div></div>';
+  h+='<div class="blk"><h3>Efforts physiques</h3><table class="ptab"><tr><th></th><th>Total</th><th>kcal</th></tr>'+
+    '<tr><td>Marche</td><td>'+fmt(st.steps)+' pas · '+fmt1(st.walkKm)+' km</td><td class="m">'+fmt(st.walkK)+'</td></tr>'+
+    '<tr><td>Vélo</td><td>'+fmt1(st.bikeKm)+' km</td><td class="m">'+fmt(st.bikeK)+'</td></tr>'+
+    '<tr><td>Renforcement</td><td>'+fmt(st.reps)+' reps'+(st.holdS?' · '+fmt(st.holdS/60)+' min gainage':'')+'</td><td class="m">'+fmt(st.exK)+'</td></tr>'+
+    '<tr><td><b>Total sport</b></td><td>'+st.activeDays+' jour'+(st.activeDays>1?'s':'')+' actif'+(st.activeDays>1?'s':'')+'</td><td>'+fmt(sportK)+'</td></tr></table>'+
+    '<div class="small muted">Moyenne : '+fmt(st.steps/el)+' pas et '+fmt(sportK/el)+' kcal de sport par jour.</div></div>';
+  h+='<div class="blk"><h3>Poids</h3>'+(wDelta!==null?'<div class="row"><span>'+fmt1(st.w[0].v)+' kg → '+fmt1(st.w[st.w.length-1].v)+' kg</span><span class="v '+(wDelta<=0?'c-good':'c-warn')+'">'+(wDelta<=0?'−':'+')+fmt1(Math.abs(wDelta))+' kg</span></div>':'<div class="small muted">Saisis ton poids du matin au moins deux fois dans la période pour voir l\'évolution réelle.</div>')+'</div>';
+  h+='<div class="small muted">Gras estimé : déficit cumulé ÷ 7 700 kcal par kilo. Les moyennes de repas portent sur les jours où tu as saisi tes repas.</div></section>';
+  return h;
+}
 function compute(key){
   var d=peek(key)||newDay(key), w=weightFor(key), p=S.profile;
   var base=p.baseFix?p.baseFix:bmrFor(w)*1.2;
@@ -698,7 +799,7 @@ function vHisto(){
   var tk=todayKey(), p=S.profile;
   var keys=Object.keys(S.days).filter(function(k){return k<=tk&&dayHasData(S.days[k]);}).sort().reverse();
   var week=[],sum=0,n=0;for(var i=0;i<7;i++){var k=shift(tk,-i);var c=compute(k);if(c.has){sum+=c.deficit;n++;}}
-  var h='<section class="card"><h2>7 derniers jours</h2><div class="kpis">'+
+  var h=vPeriod()+'<section class="card"><h2>7 derniers jours</h2><div class="kpis">'+
     '<div class="kpi"><b class="num">'+(n?fmt(sum):'—')+'</b><span>kcal de déficit cumulé</span></div>'+
     '<div class="kpi"><b class="num">'+(n&&sum>0?fmt1(sum/7700):'—')+'</b><span>kg de gras estimés</span></div>'+
     '<div class="kpi"><b class="num">'+n+'/7</b><span>jours avec repas saisis</span></div></div>'+
@@ -850,6 +951,8 @@ view.addEventListener('click',function(e){
     return;
   }
   if(a==='goto'){S.key=b.dataset.k;S.tab='bilan';render();window.scrollTo(0,0);return;}
+  if(a==='per'){PER.type=b.dataset.v;PER.off=0;render();return;}
+  if(a==='per-nav'){PER.off=Math.min(0,PER.off+(+b.dataset.v));render();return;}
   if(a==='del-tpl'){var t=S.profile.templates[+b.dataset.i];if(!t)return;
     if(b.dataset.confirm!=='1'){b.dataset.confirm='1';b.textContent='Supprimer ?';b.style.width='auto';b.style.fontSize='13px';b.style.color='var(--bad)';return;}
     S.profile.templates.splice(+b.dataset.i,1);touch('profile');render();toast('Repas type supprimé');return;}

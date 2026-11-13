@@ -433,7 +433,7 @@ function normEx(e){
 }
 var DATE_RE=/^\d{4}-\d{2}-\d{2}$/;
 var LS_KEY='releve-calorique-v1';
-var APP_VERSION='1.9 (bilans de période)';
+var APP_VERSION='1.10 (bilan : déficit sous 0)';
 
 function uid(){return Math.random().toString(36).slice(2,10);}
 function getFood(k){if(FOOD[k])return FOOD[k];var c=(S&&S.profile&&S.profile.customFoods||[]).filter(function(f){return f.k===k;})[0];return c||null;}
@@ -603,19 +603,21 @@ function perChart(st,r){
     groups=groups.map(function(g){return {k:g.k,v:g.n?g.sum/g.n:null,lbl:g.lbl};});}
   var vals=groups.filter(function(g){return g.v!==null;});
   if(vals.length<2)return '';
-  var p=S.profile,W=320,H=130,pl=34,pr=6,pt=8,pb=20;
-  var mx=Math.max(p.defMax+300,Math.max.apply(null,vals.map(function(g){return g.v;}))),mn=Math.min(0,Math.min.apply(null,vals.map(function(g){return g.v;})));
+  /* Axe en bilan (mangé − dépensé) : déficit sous 0, surplus au-dessus */
+  var p=S.profile,W=320,H=130,pl=38,pr=6,pt=8,pb=20;
+  var bals=vals.map(function(g){return -g.v;});
+  var mx=Math.max(150,Math.max.apply(null,bals)),mn=Math.min(-(p.defMax+300),Math.min.apply(null,bals));
   function Y(v){return pt+(mx-v)/(mx-mn)*(H-pt-pb);}
   var bw=(W-pl-pr)/groups.length,svg='';
-  svg+='<rect x="'+pl+'" y="'+Y(p.defMax)+'" width="'+(W-pl-pr)+'" height="'+(Y(p.defMin)-Y(p.defMax))+'" fill="var(--zone)"/>';
-  [0,p.defMin,p.defMax].forEach(function(v){svg+='<line x1="'+pl+'" x2="'+(W-pr)+'" y1="'+Y(v)+'" y2="'+Y(v)+'" stroke="var(--line)" stroke-width="1"/><text x="'+(pl-4)+'" y="'+(Y(v)+4)+'" text-anchor="end" font-size="10" fill="var(--muted)">'+fmt(v)+'</text>';});
+  svg+='<rect x="'+pl+'" y="'+Y(-p.defMin)+'" width="'+(W-pl-pr)+'" height="'+(Y(-p.defMax)-Y(-p.defMin))+'" fill="var(--zone)"/>';
+  [0,-p.defMin,-p.defMax].forEach(function(v){svg+='<line x1="'+pl+'" x2="'+(W-pr)+'" y1="'+Y(v)+'" y2="'+Y(v)+'" stroke="var(--line)" stroke-width="'+(v===0?1.5:1)+'"/><text x="'+(pl-4)+'" y="'+(Y(v)+4)+'" text-anchor="end" font-size="10" fill="var(--muted)">'+sgn(v)+'</text>';});
   var step=Math.ceil(groups.length/8);
   groups.forEach(function(g,i){var x=pl+i*bw+bw*0.15,w=Math.max(2,bw*0.7);
-    if(g.v!==null){var y0=Y(0),y1=Y(g.v),col=g.v>p.defMax?'var(--bad)':g.v>=p.defMin?'var(--good)':g.v>=0?'var(--accent)':'var(--warn)';
-      svg+='<rect x="'+x.toFixed(1)+'" y="'+Math.min(y0,y1).toFixed(1)+'" width="'+w.toFixed(1)+'" height="'+Math.max(1,Math.abs(y1-y0)).toFixed(1)+'" rx="2" fill="'+col+'"/>';}
+    if(g.v!==null){var y0=Y(0),y1=Y(-g.v),col=g.v>p.defMax?'var(--bad)':g.v>=p.defMin?'var(--good)':g.v>=0?'var(--accent)':'var(--warn)';
+      svg+='<rect data-bal="'+Math.round(-g.v)+'" x="'+x.toFixed(1)+'" y="'+Math.min(y0,y1).toFixed(1)+'" width="'+w.toFixed(1)+'" height="'+Math.max(1,Math.abs(y1-y0)).toFixed(1)+'" rx="2" fill="'+col+'"/>';}
     if(i%step===0)svg+='<text x="'+(pl+i*bw+bw/2).toFixed(1)+'" y="'+(H-6)+'" text-anchor="middle" font-size="10" fill="var(--muted)">'+esc(g.lbl)+'</text>';});
-  return '<svg class="spark" viewBox="0 0 '+W+' '+H+'" role="img" aria-label="Déficit '+(r.type==='sem'||r.type==='mois'?'par jour':'moyen par semaine')+'">'+svg+'</svg>'+
-    '<div class="small muted">'+(r.type==='sem'||r.type==='mois'?'Déficit par jour':'Déficit moyen par jour, semaine par semaine')+'. Zone verte : ta cible ('+fmt(p.defMin)+' à '+fmt(p.defMax)+' kcal).</div>';
+  return '<svg class="spark" viewBox="0 0 '+W+' '+H+'" role="img" aria-label="Bilan calorique '+(r.type==='sem'||r.type==='mois'?'par jour':'moyen par semaine')+'">'+svg+'</svg>'+
+    '<div class="small muted">'+(r.type==='sem'||r.type==='mois'?'Bilan par jour':'Bilan moyen par jour, semaine par semaine')+' : sous 0 = déficit, au-dessus = surplus. Zone verte : ta cible ('+sgn(-p.defMin)+' à '+sgn(-p.defMax)+' kcal).</div>';
 }
 function vPeriod(){
   var r=periodRange(PER.type,PER.off),st=periodStats(r),p=S.profile;
@@ -627,7 +629,7 @@ function vPeriod(){
   var wDelta=st.w.length>=2?st.w[st.w.length-1].v-st.w[0].v:null;
   h+='<div class="kpis">'+
     '<div class="kpi '+(fat>0?'good':'warn')+'"><b class="num">'+(st.mealDays?(fat>=0?'−':'+')+fmt1(Math.abs(fat)):'—')+'</b><span>kg de gras '+(fat>=0?'perdus':'pris')+' (estimé)</span></div>'+
-    '<div class="kpi"><b class="num">'+(st.mealDays?fmt(st.def/md):'—')+'</b><span>kcal de déficit moyen par jour</span></div>'+
+    '<div class="kpi"><b class="num">'+(st.mealDays?sgn(-st.def/md):'—')+'</b><span>kcal par jour en moyenne (− déficit, + surplus)</span></div>'+
     '<div class="kpi"><b class="num">'+st.mealDays+'/'+st.elapsed+'</b><span>jours avec repas saisis'+(st.elapsed<st.total?' (période en cours)':'')+'</span></div></div>';
   h+=perChart(st,r);
   h+='<div class="blk"><h3>Énergie</h3><table class="ptab"><tr><th></th><th>Total</th><th>Moy. / jour</th></tr>'+
@@ -695,16 +697,18 @@ function render(){
 function soft(){var a=document.activeElement;if(a&&view.contains(a)&&/INPUT|SELECT|TEXTAREA/.test(a.tagName)){live();}else{render();}}
 function cap(s){return s.charAt(0).toUpperCase()+s.slice(1);}
 
+function sgn(v){v=Math.round(v);return (v<0?'−':v>0?'+':'')+fmt(Math.abs(v));}
 function gauge(def){
-  var p=S.profile, lo=-500, hi=Math.max(2000,p.defMax+500), span=hi-lo;
+  /* Axe en bilan (mangé − dépensé) : déficit à gauche (négatif), surplus à droite (positif) */
+  var p=S.profile, lo=-Math.max(2000,p.defMax+500), hi=500, span=hi-lo, b=-def;
   function x(v){return ((Math.min(hi,Math.max(lo,v))-lo)/span*100).toFixed(2)+'%';}
-  var ticks=[lo,0,p.defMin,p.defMax,hi];
-  return '<div class="gauge" aria-label="Position du déficit par rapport à la cible"><div class="gwrap"><div class="gtrack">'+
-    '<div class="gzone" style="left:'+x(p.defMin)+';width:calc('+x(p.defMax)+' - '+x(p.defMin)+')"></div>'+
+  var ticks=[lo,-p.defMax,-p.defMin,0,hi];
+  return '<div class="gauge" aria-label="Position du bilan par rapport à la cible"><div class="gwrap"><div class="gtrack">'+
+    '<div class="gzone" style="left:'+x(-p.defMax)+';width:calc('+x(-p.defMin)+' - '+x(-p.defMax)+')"></div>'+
     '<div class="gzero" style="left:'+x(0)+'"></div></div>'+
-    '<div class="gmark" style="left:'+x(def)+'"></div></div>'+
-    '<div class="gticks">'+ticks.map(function(t){return '<span style="left:'+x(t)+'">'+(t>0?'−':t<0?'+':'')+fmt(Math.abs(t))+'</span>';}).join('')+'</div>'+
-    '<div class="small muted">Zone verte : ta cible de déficit ('+fmt(p.defMin)+' à '+fmt(p.defMax)+' kcal).</div></div>';
+    '<div class="gmark" data-bal="'+Math.round(b)+'" style="left:'+x(b)+'"></div></div>'+
+    '<div class="gticks">'+ticks.map(function(t){return '<span style="left:'+x(t)+'">'+sgn(t)+'</span>';}).join('')+'</div>'+
+    '<div class="small muted">Gauche = déficit (−), droite = surplus (+). Zone verte : ta cible ('+sgn(-p.defMin)+' à '+sgn(-p.defMax)+' kcal).</div></div>';
 }
 function vBilan(){
   var c=compute(S.key), st=status(c,S.key), today=S.key===todayKey(), p=S.profile;
@@ -820,7 +824,7 @@ function vHisto(){
     var w=c.has?Math.min(100,Math.max(0,c.deficit)/Math.max(2000,p.defMax+500)*100):0;
     var col=cls==='c-bad'?'var(--bad)':cls==='c-good'?'var(--good)':cls==='c-warn'?'var(--warn)':'var(--accent)';
     return '<button class="hrow" data-act="goto" data-k="'+k+'"><span class="dt">'+esc(cap(label(k,{weekday:'short',day:'numeric',month:'short'})))+'</span>'+
-      '<span class="bl '+cls+'">'+(c.has?(c.deficit>=0?'−':'+')+fmt(Math.abs(c.deficit))+' kcal':'repas non saisis')+'</span>'+
+      '<span class="bl '+cls+'">'+(c.has?sgn(-c.deficit)+' kcal':'repas non saisis')+'</span>'+
       '<span class="sub">Mangé '+fmt(c.inK)+' · Dépensé '+fmt(c.out)+(S.days[k].weight?' · '+fmt1(S.days[k].weight)+' kg':'')+'</span>'+
       '<span class="hb"><i style="width:'+w+'%;background:'+col+'"></i></span></button>';
   }).join('')+'</div>';
